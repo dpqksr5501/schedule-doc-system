@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>군수실 일정 통합 관리 시스템</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ===================================================
+       1단: 최상단 메인 헤더 (군수실 전용 브랜딩)
+       =================================================== -->
+  <header class="top-navbar no-print">
+    <div class="top-navbar-inner">
+      <div class="brand-area">
+        <img id="headerSloganImg" class="brand-logo-preview" alt="로고">
+        <div class="brand-title-group">
+          <h1>
+            군수실 일정 통합 관리 시스템
+            <span style="font-size: 11px; background: #e0f2fe; color: #0284c7; padding: 2px 6px; border-radius: 4px; font-weight: 700;">군수실 전용 v1.0.0</span>
+          </h1>
+          <p>보은군 군수실 전용 스마트 솔루션 · 일일 · 주간 · 월간 자동 출력 & HWP/HWPX 변환</p>
+        </div>
+      </div>
+
+      <!-- 중앙 큼직한 4대 네비게이션 탭 -->
+      <div class="nav-tabs-wrapper">
+        <nav class="nav-tabs">
+          <button class="tab-btn active" data-tab="daily">
+            📄 1. 일일 일정표
+          </button>
+          <button class="tab-btn" data-tab="weekly">
+            📑 2. 주간 행사계획
+          </button>
+          <button class="tab-btn" data-tab="monthly">
+            🗓️ 3. 월간 일정표
+          </button>
+          <button class="tab-btn" data-tab="admin">
+            📋 전체 일정 목록
+          </button>
+        </nav>
+      </div>
+
+      <!-- 우측 핵심 액션 -->
+      <div class="top-navbar-actions">
+        <button class="btn btn-primary" id="btnNewEvent" style="font-size: 15px; padding: 9px 20px; box-shadow: 0 2px 8px rgba(30, 64, 175, 0.3);">
+          ➕ 새 일정 등록
+        </button>
+
+        <div class="dropdown" id="toolsDropdown">
+          <button class="btn btn-outline" id="btnToolsMenu">
+            ⚙️ 도구 ▼
+          </button>
+          <div class="dropdown-content">
+            <button class="dropdown-item" id="btnExportExcel">📊 엑셀 다운로드 (CSV)</button>
+            <button class="dropdown-item" id="btnOpenTrash">🗑️ 삭제 휴지통 (<span id="trashCount">0</span>)</button>
+            <button class="dropdown-item" id="btnCheckUpdate">🔄 프로그램 패치 확인</button>
+            <button class="dropdown-item" id="btnBackupData">💾 전체 데이터 백업</button>
+            <button class="dropdown-item" id="btnRestoreData">📂 백업 파일 복원</button>
+          </div>
+        </div>
+        <input type="file" id="fileRestoreInput" accept=".json" style="display: none;">
+      </div>
+    </div>
+  </header>
+
+  <!-- ===================================================
+       💡 초간단 3단계 이용 순서 가이드
+       =================================================== -->
+  <div class="step-guide-bar no-print">
+    <div class="step-guide-inner">
+      <div class="step-flow">
+        <span class="step-flow-title">📌 쉬운 사용 순서:</span>
+        <div class="step-item">
+          <span class="step-num">1</span>
+          <span>우측 상단 <strong>[ ➕ 새 일정 등록 ]</strong> 누르기</span>
+        </div>
+        <span class="step-arrow">➔</span>
+        <div class="step-item">
+          <span class="step-num">2</span>
+          <span>상단 탭에서 <strong>[ 일일 / 주간 / 월간 ]</strong> 양식 고르기</span>
+        </div>
+        <span class="step-arrow">➔</span>
+        <div class="step-item">
+          <span class="step-num">3</span>
+          <span><strong>[ 🖨️ 인쇄 ]</strong> 또는 <strong>[ 📄 한글 저장 ]</strong> 누르면 끝!</span>
+        </div>
+      </div>
+      <div class="step-tip">
+        👉 💡 <strong>꿀팁:</strong> A4 종이 위 일정을 <strong>마우스로 클릭</strong>하면 색상과 내용을 바로 수정할 수 있습니다!
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================
+       2단: 스마트 빠른 입력 바
+       =================================================== -->
+  <div class="quick-input-bar no-print">
+    <div class="quick-input-inner">
+      <span class="quick-badge">⚡ 한 줄 빠른 등록</span>
+      <input type="text" id="quickInputText" class="quick-input-box" placeholder="예: 7/15 14:00 보은읍 순방 소회의실 행정운영과 (한 줄만 치고 엔터 누르면 즉시 등록!)">
+      <button class="btn btn-success btn-sm" id="btnQuickSubmit">등록 (Enter)</button>
+    </div>
+  </div>
+
+  <!-- ===================================================
+       3단: 문서 조작 & 출력 툴바
+       =================================================== -->
+  <div class="doc-action-bar no-print">
+    <div class="doc-action-inner" id="controlBarArea"></div>
+  </div>
+
+  <!-- ===================================================
+       4단: 메인 A4 프리뷰 스테이지
+       =================================================== -->
+  <main class="main-stage">
+    <div id="mainStageArea"></div>
+  </main>
+
+  <!-- ===================================================
+       모달: 새 일정 등록 / 수정 (대형 컬러 팔레트 탑재)
+       =================================================== -->
+  <div id="eventModal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 id="modalTitle">새 일정 등록</h3>
+        <button type="button" class="btn-close" id="btnModalClose">&times;</button>
+      </div>
+      <form id="eventForm">
+        <div class="modal-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="inputEventDate">📅 일자 *</label>
+              <input type="date" id="inputEventDate" class="control-input" required>
+            </div>
+            <div class="form-group">
+              <label for="inputEventTime">⏰ 시간 *</label>
+              <input type="time" id="inputEventTime" class="control-input" required value="10:00">
+              <div class="chip-group">
+                <span class="chip" data-target="inputEventTime" data-val="08:30">08:30</span>
+                <span class="chip" data-target="inputEventTime" data-val="09:00">09:00</span>
+                <span class="chip" data-target="inputEventTime" data-val="10:00">10:00</span>
+                <span class="chip" data-target="inputEventTime" data-val="11:00">11:00</span>
+                <span class="chip" data-target="inputEventTime" data-val="14:00">14:00</span>
+                <span class="chip" data-target="inputEventTime" data-val="16:00">16:00</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="inputEventTitle">📌 행사/일정명 *</label>
+            <input type="text" id="inputEventTitle" class="control-input" placeholder="예: 보은군 부군수 취임식" required>
+          </div>
+
+          <div class="form-group">
+            <label for="inputEventPlace">📍 장소</label>
+            <input type="text" id="inputEventPlace" class="control-input" placeholder="예: 군청소회의실, 도지사실">
+            <div class="chip-group">
+              <span class="chip" data-target="inputEventPlace" data-val="집무실">집무실</span>
+              <span class="chip" data-target="inputEventPlace" data-val="군수님실">군수님실</span>
+              <span class="chip" data-target="inputEventPlace" data-val="소회의실">소회의실</span>
+              <span class="chip" data-target="inputEventPlace" data-val="대회의실">대회의실</span>
+              <span class="chip" data-target="inputEventPlace" data-val="그랜드컨벤션">그랜드컨벤션</span>
+              <span class="chip" data-target="inputEventPlace" data-val="전통시장일원">전통시장</span>
+              <span class="chip" data-target="inputEventPlace" data-val="문화예술회관">문화예술회관</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="inputEventDept">🏢 주관 / 관련부서</label>
+            <input type="text" id="inputEventDept" class="control-input" placeholder="예: 행정운영과, 보건소">
+            <div class="chip-group">
+              <span class="chip" data-target="inputEventDept" data-val="행정운영과">행정운영과</span>
+              <span class="chip" data-target="inputEventDept" data-val="주민행복과">주민행복과</span>
+              <span class="chip" data-target="inputEventDept" data-val="문화관광과">문화관광과</span>
+              <span class="chip" data-target="inputEventDept" data-val="보건소">보건소</span>
+              <span class="chip" data-target="inputEventDept" data-val="농업기술센터">농업기술센터</span>
+              <span class="chip" data-target="inputEventDept" data-val="재난안전과">재난안전과</span>
+              <span class="chip" data-target="inputEventDept" data-val="미래전략과">미래전략과</span>
+              <span class="chip" data-target="inputEventDept" data-val="기획감사실">기획감사실</span>
+            </div>
+          </div>
+
+          <!-- 🎨 글씨 색상 선택 팔레트 -->
+          <div class="color-picker-section">
+            <div class="color-picker-title">
+              <span>🎨 글씨 색상 선택 (표에 어떤 색으로 넣을까요?)</span>
+            </div>
+            <input type="hidden" id="inputAttendeeVal" value="gunsu">
+            <div class="color-palette-grid">
+              <div class="color-chip-btn chip-green selected" data-val="gunsu">
+                <div class="color-chip-circle" style="background: #008000;"></div>
+                <div class="color-chip-name">🟢 초록색</div>
+                <div class="color-chip-desc">군수님 참석<br>(일일일정표 자동등재)</div>
+              </div>
+
+              <div class="color-chip-btn chip-blue" data-val="v_gunsu">
+                <div class="color-chip-circle" style="background: #0000ff;"></div>
+                <div class="color-chip-name">🔵 파란색</div>
+                <div class="color-chip-desc">부군수님 참석<br>(주간 파란색 글씨)</div>
+              </div>
+
+              <div class="color-chip-btn chip-black" data-val="general">
+                <div class="color-chip-circle" style="background: #0f172a;"></div>
+                <div class="color-chip-name">⚫ 검정색</div>
+                <div class="color-chip-desc">일반 / 부서 행사<br>(기본 글씨)</div>
+              </div>
+
+              <div class="color-chip-btn chip-red" data-val="important">
+                <div class="color-chip-circle" style="background: #cc0000;"></div>
+                <div class="color-chip-name">🔴 빨간색</div>
+                <div class="color-chip-desc">중요 / 특별 행사<br>(강조 글씨)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" id="btnModalCancel">취소</button>
+          <button type="submit" class="btn btn-primary" style="font-size: 15px; padding: 10px 24px;">저장하기</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 모달: 휴지통 -->
+  <div id="trashModal" class="modal-overlay">
+    <div class="modal-box" style="max-width: 720px;">
+      <div class="modal-header">
+        <h3>🗑️ 삭제된 일정 휴지통</h3>
+        <button type="button" class="btn-close" id="btnTrashClose">&times;</button>
+      </div>
+      <div class="modal-body" style="max-height: 60vh;">
+        <div id="trashListArea"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" id="btnEmptyTrash" style="color: var(--danger);">휴지통 비우기</button>
+        <button type="button" class="btn btn-primary" id="btnTrashDone">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="initial_data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

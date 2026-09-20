@@ -1,0 +1,8 @@
+{
+  "files.encoding": "utf8",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}"
+  ],
+  "editor.tabSize": 2,
+  "editor.wordWrap": "on"
+}
