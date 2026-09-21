@@ -8,6 +8,7 @@ GitHub Repository: https://github.com/dpqksr5501/schedule-doc-system
 import os
 import sys
 import json
+import shutil
 import subprocess
 import webview
 from datetime import datetime
@@ -34,7 +35,6 @@ MANUAL_CONTENT = """============================================================
     [보은군 군수실] 일정 통합 관리 시스템 간편 사용설명서
 ========================================================================
 
-아버지, 업무 보실 때 한글 표 작업하느라 고생 많으셨죠?
 단 한 번만 입력하시면 일일·주간·월간 일정표가 자동으로 만들어지고,
 실제 한컴오피스 한글 문서로 1초 만에 저장되는 프로그램입니다!
 
@@ -109,12 +109,11 @@ MANUAL_CONTENT = """============================================================
 """
 
 def ensure_manual_file():
-    """출력 폴더에 항상 설명서가 존재하도록 보장"""
+    """출력 폴더에 항상 최신 설명서가 존재하도록 보장"""
     try:
         os.makedirs(OUTPUT_DIR, exist_ok=True)
-        if not os.path.exists(MANUAL_FILE_PATH):
-            with open(MANUAL_FILE_PATH, 'w', encoding='utf-8-sig') as f:
-                f.write(MANUAL_CONTENT)
+        with open(MANUAL_FILE_PATH, 'w', encoding='utf-8-sig') as f:
+            f.write(MANUAL_CONTENT)
     except Exception:
         pass
 
@@ -140,20 +139,46 @@ class DesktopApi:
         return updater.apply_update(download_url)
 
     def save_persistent_data(self, data_str):
-        """아버님의 소중한 일정 데이터를 %APPDATA%에 영구 보존"""
+        """아버님의 소중한 일정 데이터를 %APPDATA%에 영구 보존 및 자동 백업 (원자적 쓰기)"""
         try:
-            with open(DATA_FILE_PATH, 'w', encoding='utf-8') as f:
+            # 기존 데이터가 존재하면 .bak 파일로 안전 복사
+            if os.path.exists(DATA_FILE_PATH) and os.path.getsize(DATA_FILE_PATH) > 0:
+                try:
+                    shutil.copy2(DATA_FILE_PATH, DATA_FILE_PATH + ".bak")
+                except Exception:
+                    pass
+
+            # 원자적 쓰기 (.tmp 파일에 먼저 기록 후 교체)
+            tmp_path = DATA_FILE_PATH + ".tmp"
+            with open(tmp_path, 'w', encoding='utf-8') as f:
                 f.write(data_str)
+
+            if os.path.exists(DATA_FILE_PATH):
+                os.replace(tmp_path, DATA_FILE_PATH)
+            else:
+                os.rename(tmp_path, DATA_FILE_PATH)
+
             return {'success': True}
         except Exception as e:
             return {'success': False, 'message': str(e)}
 
     def load_persistent_data(self):
-        """%APPDATA%에 영구 보존된 데이터 로드"""
+        """%APPDATA%에 영구 보존된 데이터 로드 (손상 시 .bak 자동 복구)"""
         try:
             if os.path.exists(DATA_FILE_PATH):
                 with open(DATA_FILE_PATH, 'r', encoding='utf-8') as f:
-                    return {'success': True, 'data': f.read()}
+                    content = f.read()
+                    if content.strip():
+                        return {'success': True, 'data': content}
+            
+            # 메인 파일이 없거나 비어있는 경우 백업 파일(.bak)에서 복구 시도
+            bak_path = DATA_FILE_PATH + ".bak"
+            if os.path.exists(bak_path):
+                with open(bak_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    if content.strip():
+                        return {'success': True, 'data': content, 'recovered_from_backup': True}
+
             return {'success': False, 'message': 'No file'}
         except Exception as e:
             return {'success': False, 'message': str(e)}

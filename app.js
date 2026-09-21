@@ -1,5 +1,5 @@
 // ===================================================
-// 군수님 일정표 원스톱 관리 시스템 - 고도화 버전 (v1.0.0)
+// 군수님 일정표 원스톱 관리 시스템 - 고도화 버전 (v1.0.1)
 // With Smart Quick-Input, Previous Week Copy, Trash/Restore,
 // and Native Python HWPX/HWP Desktop Integration
 // ===================================================
@@ -406,11 +406,11 @@
         if (res.hasUpdate) {
           alert(`🔔 새로운 버전(${res.latestVersion})이 출시되었습니다!\n\n업데이트 내용:\n${res.releaseNotes}`);
         } else {
-          alert(`현재 최신 버전(v${res.currentVersion || '1.0.0'})을 사용 중입니다.`);
+          alert(`현재 최신 버전(v${res.currentVersion || '1.0.1'})을 사용 중입니다.`);
         }
       });
     } else {
-      alert('현재 최신 버전(v1.0.0)입니다.');
+      alert('현재 최신 버전(v1.0.1)입니다.');
     }
   }
 

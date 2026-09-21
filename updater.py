@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 import time
 
-CURRENT_VERSION = "1.0.0"
+CURRENT_VERSION = "1.0.1"
 REPO_OWNER = "dpqksr5501"
 REPO_NAME = "schedule-doc-system"
 GITHUB_API_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
@@ -65,7 +65,7 @@ def check_for_updates():
                 'success': True,
                 'hasUpdate': False,
                 'currentVersion': CURRENT_VERSION,
-                'message': '현재 최신 버전(v1.0.0)을 사용하고 있습니다. (등록된 릴리즈 없음)'
+                'message': f'현재 최신 버전(v{CURRENT_VERSION})을 사용하고 있습니다. (등록된 릴리즈 없음)'
             }
         return {
             'success': False,

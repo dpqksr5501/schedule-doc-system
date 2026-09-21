@@ -31,7 +31,7 @@ def run_all_tests():
     import updater
     chk = updater.check_for_updates()
     print(f"  -> GitHub 응답: {chk}")
-    assert chk['currentVersion'] == "1.0.0", "버전 불일치"
+    assert chk['currentVersion'] == "1.0.1", "버전 불일치"
     assert 'hasUpdate' in chk, "hasUpdate 필드 누락"
     print("  [SUCCESS]: 아드님 GitHub 저장소와 HTTPS 통신 100% 성공!")
 
@@ -42,9 +42,9 @@ def run_all_tests():
     dummy_new = os.path.join(temp_d, "downloaded_update.exe")
 
     with open(dummy_target, "wb") as f:
-        f.write(b"OLD_VERSION_1.0.0")
+        f.write(b"OLD_VERSION_1.0.1")
     with open(dummy_new, "wb") as f:
-        f.write(b"NEW_VERSION_1.0.1")
+        f.write(b"NEW_VERSION_1.0.2")
 
     swap_bat = os.path.join(temp_d, "test_swap.bat")
     bat_script = f"""@echo off
@@ -67,7 +67,7 @@ del "%~f0"
         final_content = f.read()
 
     print(f"  -> 교체된 파일 내용: {final_content}")
-    assert final_content == b"NEW_VERSION_1.0.1", "파일 교체 실패!"
+    assert final_content == b"NEW_VERSION_1.0.2", "파일 교체 실패!"
     print("  [SUCCESS]: 실행 파일 자가 교체(In-Place Swap) 메커니즘 100% 검증 완료!")
 
     # 4. 한글 HWPX 생성 무결성 테스트
