@@ -167,6 +167,7 @@
     const fileInp = document.getElementById('fileRestoreInput');
     if (fileInp) fileInp.addEventListener('change', handleFileRestore);
 
+    bindClick('btnOpenManual', triggerOpenManual);
     bindClick('btnExportHwpx', () => triggerNativeExport('hwpx'));
     bindClick('btnExportHwp', () => triggerNativeExport('hwp'));
     bindClick('btnOpenFolder', triggerOpenFolder);
@@ -1280,6 +1281,14 @@
       window.pywebview.api.open_export_folder();
     } else {
       alert('바탕화면의 [군수실_일정_출력문서] 폴더를 확인해 주세요.');
+    }
+  }
+
+  function triggerOpenManual() {
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.open_manual) {
+      window.pywebview.api.open_manual();
+    } else {
+      alert('바탕화면 또는 [군수실_일정_출력문서] 폴더 안의 [★ 군수실_일정표_사용설명서.txt] 파일을 열어보세요!');
     }
   }
 
