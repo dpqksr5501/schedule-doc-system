@@ -1,4 +1,4 @@
-pywebview>=6.0.0
-pywin32>=308
-pillow>=10.0.0
-pyinstaller>=6.0.0
+pywebview==6.2.1
+pywin32==312; sys_platform == "win32"
+pyinstaller==6.22.3
+olefile==0.47

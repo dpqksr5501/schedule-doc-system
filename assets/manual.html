@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>군수실 일정 관리 — 사용 방법 · 저장 위치</title>
+  <style>
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f1f5f8;color:#233b4d;font:18px/1.8 "Malgun Gothic","맑은 고딕",sans-serif}
+    main{max-width:900px;margin:28px auto;padding:38px 46px;background:white;border:1px solid #dbe4eb;border-radius:12px}
+    h1{font-size:30px;line-height:1.4;letter-spacing:-1px;margin:4px 0 14px}h2{font-size:23px;color:#234f71;margin-top:38px;border-bottom:1px solid #dce6ed;padding-bottom:8px;scroll-margin-top:16px}h3{font-size:19px;color:#345b77;margin:22px 0 8px}
+    p,li{margin:10px 0}.eyebrow,.subtle{font-size:15px;color:#647b8d}.box{padding:17px 21px;background:#edf4f8;border-left:4px solid #658eaa;border-radius:5px;margin:18px 0}.attention{background:#fff6e5;border-color:#c39a50}
+    strong{color:#183e5b}a{color:#1f5e89;text-underline-offset:4px}a:focus-visible{outline:3px solid #689abb;outline-offset:4px}
+    nav{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:20px 0}nav a{padding:10px 13px;background:#f0f5f8;border-radius:6px;text-decoration:none;font-size:16px}
+    .path{font-size:15px;overflow-wrap:anywhere;background:#f3f6f8;padding:12px 15px;border-radius:6px}
+    table{width:100%;border-collapse:collapse;margin:16px 0;font-size:17px}th,td{padding:12px 14px;border:1px solid #d6e2eb;text-align:left;vertical-align:top}th{background:#eff5f8}caption{text-align:left;font-size:15px;color:#647b8d;margin-bottom:5px}
+    ol{padding-left:28px}li{padding-left:3px}.checklist{list-style:none;padding-left:0}.checklist li:before{content:"□ ";color:#4e7089}.footer{border-top:1px solid #dce6ed;padding-top:14px;margin-top:30px;font-size:15px;color:#617789}
+    @page{size:A4;margin:15mm}@media print{body{background:white;font-size:11pt}main{margin:0;padding:0;max-width:none;border:0}h1{font-size:19pt}h2{font-size:14pt;break-after:avoid}h3{break-after:avoid}nav{display:none}table{font-size:10.5pt}tr,.box{break-inside:avoid}.path{font-size:9pt}.box,th{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+    @media(max-width:650px){main{margin:10px;padding:22px}h1{font-size:26px}nav{grid-template-columns:1fr}table{font-size:15px}th,td{padding:9px}}
+  </style>
+</head>
+<body><main>
+  <p class="eyebrow">보은군 · 군수실 업무 도우미 2.1</p>
+  <h1>사용 방법과 저장 위치</h1>
+  <div class="box"><strong>처음 사용하신다면 짧은 안내부터 보세요.</strong><br><a href="처음사용_5분안내.html">처음 사용 5분 안내 열기</a> — 인쇄해서 책상 옆에 두셔도 됩니다.<br>일정 입력 → 양식과 날짜 선택 → 한글 저장 순서로 진행합니다.</div>
+  <nav aria-label="설명서 목차">
+    <a href="#start">1. 처음 실행하기</a><a href="#input">2. 일정 입력·수정하기</a>
+    <a href="#output">3. 한글 저장·인쇄하기</a><a href="#folders">4. 문서 찾기</a>
+    <a href="#notes">5. 주석·업무 메모 사용하기</a><a href="#recover">6. 실수 복구·백업하기</a>
+    <a href="#repeat">7. 반복 일정·빠른 입력</a><a href="#trouble">8. 문제 해결하기</a>
+    <a href="#check">9. 배부·제출 전 확인</a><a href="#update">10. 업데이트·데이터 위치</a>
+  </nav>
+
+  <h2 id="start">1. 처음 실행하기</h2>
+  <ol>
+    <li>배포 파일을 내려받습니다. <strong>ZIP으로 받았다면 먼저 압축을 풀어 주세요.</strong> 마우스 오른쪽 버튼 → <strong>압축 풀기</strong>를 선택합니다.</li>
+    <li>압축을 푼 폴더 안의 <strong>GunsuSchedule.exe</strong>를 두 번 누릅니다. 실행 파일만 받았다면 그 파일을 실행합니다.</li>
+    <li>첫 실행이 정상 완료되면 바탕화면에 <strong>군수실 일정 관리</strong> 바로가기와 <strong>군수실_일정_출력문서</strong> 폴더가 준비됩니다.</li>
+  </ol>
+  <p>다음부터는 바탕화면 바로가기를 사용하세요. 파이썬이나 VS Code 같은 개발 도구는 설치하지 않아도 됩니다.</p>
+  <p>기관에서 실행을 제한하거나 WebView2가 없다는 안내가 나오면 전산 담당자에게 확인을 요청해 주세요.</p>
+
+  <h2 id="input">2. 일정 입력·수정하기</h2>
+  <ol>
+    <li><strong>＋ 새 일정</strong>을 누릅니다.</li>
+    <li><strong>일자·시작 시간·행사명</strong>을 입력하고, 장소와 주관부서를 확인합니다.</li>
+    <li><strong>참석 구분</strong>에서 군수님 참석 / 부군수님 참석 / 일반·부서 행사를 고릅니다.</li>
+    <li><strong>저장하기</strong>를 누른 뒤 화면 위쪽의 <strong>저장 완료</strong>를 확인합니다.</li>
+  </ol>
+  <p>행사명을 누르면 수정창이 열립니다. 고친 뒤 다시 <strong>저장하기</strong>를 눌러 주세요.</p>
+  <p><strong>미확정</strong>은 담당자에게 확인이 필요한 일정입니다. <strong>취소</strong>는 전체 목록에 남지만 일반 일정표에서는 빠집니다. 참석 구분과 <strong>중요</strong> 표시는 별도로 선택할 수 있습니다.</p>
+
+  <h2 id="output">3. 한글 저장·인쇄하기</h2>
+  <ol>
+    <li>왼쪽에서 <strong>일일 일정표 / 주간 행사계획 / 월간 일정표</strong>를 선택합니다.</li>
+    <li>화면 위의 <strong>날짜</strong>를 확인합니다. 주간은 그 날짜가 속한 월~일, 월간은 해당 달 전체입니다.</li>
+    <li>미리보기 내용을 확인하고 <strong>한글 저장 (.hwp)</strong>을 누릅니다.</li>
+    <li>저장 결과 안내를 확인합니다. 파일이 있는 폴더가 열리며, <strong>저장한 파일 보기</strong>로도 찾을 수 있습니다.</li>
+  </ol>
+  <div class="box"><strong>실제 HWP 저장에는 Windows용 한글이 필요합니다.</strong><br>HWPX를 열 수 있는 한글 버전이어야 합니다. 파일 접근 승인창이 나타나면 이번에 만든 문서 경로를 확인하고 허용해 주세요. 최대 90초까지 기다립니다.</div>
+  <table><caption>양식과 용지 방향</caption><thead><tr><th>양식</th><th>출력 내용</th></tr></thead><tbody>
+    <tr><td><strong>일일 · 세로 A4</strong></td><td>큰 제목, 시간, 행사명, 오른쪽 장소. 주말에는 <strong>토·일 한 장에 묶기</strong>를 사용할 수 있습니다.</td></tr>
+    <tr><td><strong>주간 · 세로 A4</strong></td><td>일자·시간·행사명·장소·부서 표. 날짜를 묶고 군수님 초록색 / 부군수님 파란색 / 일반 검정색으로 표시합니다.</td></tr>
+    <tr><td><strong>월간 · 가로 A4</strong></td><td>월요일부터 일요일까지의 달력. 월초·월말을 포함하고 주말 날짜는 빨간색으로 표시합니다.</td></tr>
+  </tbody></table>
+  <p><strong>HWPX 저장</strong>은 HWPX 형식이 필요할 때 선택합니다. <strong>인쇄 / PDF</strong>에서는 프린터 또는 PDF 저장을 선택합니다. A4 용지 방향과 페이지 수를 미리보기에서 확인해 주세요. 내용이 많으면 여러 장으로 이어집니다.</p>
+  <p>브라우저 인쇄에서 주소나 날짜가 머리글·바닥글에 붙으면 해당 옵션을 꺼 주세요. 화면의 <strong>용지 전체 보기</strong>는 화면 크기에만 영향을 주며, 한글 저장과 인쇄는 A4 기준입니다.</p>
+
+  <h2 id="folders">4. 저장한 문서 찾기</h2>
+  <p>바탕화면의 <strong>군수실_일정_출력문서</strong>를 열거나 프로그램 아래쪽의 <strong>저장 폴더 열기</strong>를 누르세요. 이 PC의 실제 출력 위치는 다음과 같습니다.</p>
+  <div class="path">{{OUTPUT_PATH}}</div>
+  <table><thead><tr><th>폴더</th><th>보관하는 내용</th></tr></thead><tbody>
+    <tr><td>일일일정</td><td>하루 일정표와 토·일 통합 일정표</td></tr>
+    <tr><td>주간일정</td><td>한 주의 행사계획</td></tr>
+    <tr><td>월간일정</td><td>한 달의 달력형 일정표</td></tr>
+    <tr><td>데이터백업</td><td>직접 만든 전체 일정·휴지통·업무 메모 백업</td></tr>
+  </tbody></table>
+  <p>파일 이름에 일정 날짜와 저장 시각이 붙습니다. 저장할 때마다 새 파일을 만들므로 <strong>이전에 열어 둔 문서가 자동으로 갱신되지는 않습니다.</strong> 수정 후에는 새로 저장한 문서를 열어 주세요.</p>
+  <p>바탕화면이 OneDrive나 기관 지정 위치에 있어도 Windows가 알려주는 실제 위치에 출력 폴더를 만듭니다.</p>
+
+  <h2 id="notes">5. 주석·업무 메모 사용하기</h2>
+  <p>행사명을 눌러 수정창을 열면 기록할 수 있습니다.</p>
+  <table><thead><tr><th>기록할 내용</th><th>입력 예시</th><th>출력 방식</th></tr></thead><tbody>
+    <tr><td><strong>출력 주석</strong></td><td>주민 대표 3명 참석 · 군수님 인사말 3분</td><td><strong>출력 주석 포함</strong> 선택 시 행사 아래 표시</td></tr>
+    <tr><td><strong>상세 업무 메모</strong></td><td>참석 예정자, 담당 연락, 인사말·이동 준비, 전달사항, 준비 체크리스트</td><td><strong>상세 업무자료 첨부</strong> 선택 시 뒤쪽 별도 참고 페이지</td></tr>
+  </tbody></table>
+  <div class="box"><strong>기본 문서에는 주석과 상세 메모가 빠집니다.</strong><br>필요한 경우에만 출력 옵션을 선택하세요. 내부 연락사항과 전달사항을 배부해도 되는지 확인해 주세요. 전체 데이터 백업에는 메모와 체크리스트도 포함됩니다.</div>
+  <p>예를 들어 준비사항에 ‘13:40 현장 도착 → 좌석 확인 → 인사말 자료 전달’을 적고, 확인 목록에 ‘인사말 인쇄’, ‘차량 동선 확인’을 나누어 등록하면 완료 여부를 관리하기 편합니다.</p>
+
+  <h2 id="recover">6. 실수 복구·백업하기</h2>
+  <table><thead><tr><th>상황</th><th>사용할 기능</th></tr></thead><tbody>
+    <tr><td>방금 내용을 잘못 고쳤을 때</td><td><strong>되돌리기</strong>. 현재 실행 중인 동안 최근 30번의 변경을 기억합니다.</td></tr>
+    <tr><td>일정을 잘못 삭제했을 때</td><td><strong>휴지통 → 복원</strong>. 메모와 준비 확인 목록도 복원합니다.</td></tr>
+    <tr><td>큰 변경을 하기 전·정기 보관</td><td><strong>백업 · 복원 · 업데이트 → 지금 백업하기</strong></td></tr>
+    <tr><td>이전 전체 상태로 되돌릴 때</td><td><strong>자동 백업에서 복원</strong> 또는 <strong>백업 파일 선택</strong></td></tr>
+  </tbody></table>
+  <div class="box attention"><strong>전체 백업 복원은 현재 일정을 백업 내용으로 바꿉니다.</strong><br>복원 전에 현재 상태를 백업하고, 안내창의 날짜 범위·일정 건수를 확인하세요.</div>
+  <p>PC 고장에 대비하려면 백업 파일을 기관에서 정한 안전한 저장 위치에도 따로 보관하세요. 같은 PC 안의 백업만으로는 PC 전체 고장에 대비하기 어렵습니다.</p>
+
+  <h2 id="repeat">7. 반복 일정·빠른 입력</h2>
+  <p>주간 화면에서 <strong>지난주 일정 가져오기</strong>를 누르고 필요한 행사만 선택합니다. 동일 일정은 건너뛰며, 가져온 일정은 <strong>미확정</strong>으로 등록됩니다. 날짜와 내용을 확인한 뒤 확정하세요.</p>
+  <p>참석자·메모 복사는 별도 선택입니다. 준비 확인 목록은 미완료로 바뀝니다.</p>
+  <p><strong>빠른 입력</strong>에 ‘<strong>10/15 14:00 지역 현안 간담회</strong>’처럼 적고 <strong>내용 확인</strong>을 누르면 입력창이 채워집니다. 확인 후 <strong>저장하기</strong>를 눌러야 등록됩니다.</p>
+
+  <h2 id="trouble">8. 문제 해결하기</h2>
+  <h3>저장한 일정이 화면에 보이지 않아요.</h3>
+  <p>선택한 날짜를 확인하세요. 일일 화면의 <strong>군수님 참석만</strong>이 켜져 있으면 부군수님·일반 행사는 빠집니다. 체크를 해제하거나 <strong>전체 일정 · 검색</strong>에서 행사명을 찾아보세요. 취소 일정도 일반 출력에서는 빠집니다.</p>
+  <h3>HWP 저장에 실패했다고 나와요.</h3>
+  <div class="box attention"><strong>이 안내가 나오면 HWP 저장이 완료된 상태가 아닙니다.</strong><br>생성 내용은 HWPX 중간 문서로 남습니다. <strong>HWPX 중간 문서 보기</strong> → 한글에서 열기 → <strong>다른 이름으로 저장 → 한글 문서 (*.hwp)</strong>를 선택하세요.<br>한글이 없거나 HWPX를 열지 못하면 전산 담당자에게 한글 설치와 자동화 사용 가능 여부를 확인받으세요.</div>
+  <h3>일정 저장 실패 / 출력 폴더 오류가 나와요.</h3>
+  <p>등록이나 문서 저장이 완료됐다고 생각하지 말고 오류 안내를 확인하세요. 바탕화면 권한·기관 보안 제한 문제는 전산 담당자에게 확인받으세요. 일정 데이터나 백업 파일을 임의로 지우지 마세요.</p>
+  <h3>프로그램이 이미 실행 중이라고 나와요.</h3>
+  <p>작업 표시줄에서 열린 <strong>군수실 일정 관리</strong> 창을 확인하세요.</p>
+  <h3>전산 담당자에게 전달하면 좋은 내용</h3>
+  <p>문제가 발생한 버튼, 표시된 오류 문구, 발생 시각, 프로그램 버전, 사용 중인 한글 버전을 알려 주세요. 오류 기록 위치는 아래와 같습니다.</p>
+  <div class="path">{{DATA_PATH}}\application.log</div>
+  <p class="subtle">일정이나 메모가 포함된 화면·백업·오류 기록을 전달할 때는 기관에서 허용한 전달 경로를 사용하세요.</p>
+
+  <h2 id="check">9. 배부·제출 전 확인</h2>
+  <ul class="checklist">
+    <li>날짜·요일·시간·참석 구분이 맞는가?</li><li>장소와 주관부서가 최신 내용인가?</li>
+    <li>미확정 일정은 담당자에게 확인했는가?</li><li>주석·내부 연락·업무 메모를 배부 문서에 포함해도 되는가?</li>
+    <li>기관이 요구한 형식(.hwp / .hwpx)이 맞는가?</li><li>한글 또는 인쇄 미리보기에서 글자·용지 방향·페이지 수가 적절한가?</li>
+  </ul>
+
+  <h2 id="update">10. 업데이트·데이터 위치</h2>
+  <p><strong>새 버전 확인</strong> 후 직접 선택할 때만 업데이트합니다. 새 버전의 정상 시작을 확인한 뒤 바로가기를 바꾸고 이전 버전은 별도로 보관합니다. 인터넷이 없어도 설치된 프로그램의 일정 입력과 로컬 문서 작업은 사용할 수 있습니다.</p>
+  <p><strong>프로그램 보관 위치</strong></p><div class="path">{{APP_PATH}}</div>
+  <p><strong>자동 저장되는 원본 일정·메모 위치</strong></p><div class="path">{{DATA_PATH}}</div>
+  <p>프로그램, 원본 데이터, 출력 문서는 서로 다른 곳에 보관됩니다. 위 숨김 폴더는 직접 찾아 수정할 필요가 없습니다. <strong>한글 출력 파일은 일정 전체를 복원하는 백업이 아니므로, 지금 백업하기도 함께 이용하세요.</strong></p>
+  <p class="footer">짧은 안내는 <a href="처음사용_5분안내.html">처음사용_5분안내.html</a>, 글자 파일은 같은 폴더의 <strong>사용설명서.txt</strong>에서 확인할 수 있습니다.</p>
+</main></body>
+</html>

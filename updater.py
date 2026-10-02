@@ -1,169 +1,195 @@
-# -*- coding: utf-8 -*-
-"""
-보은군 군수실 일정 통합 관리 시스템 - 자동 업데이트 (Auto-Updater) 모듈
-GitHub Releases 기반 원자적 자가 교체(In-Place Self Update) 엔진
-Repository: https://github.com/dpqksr5501/schedule-doc-system
-"""
-
-import os
-import sys
+"""Verified GitHub updates installed side by side; no shell scripts or in-place swaps."""
+from pathlib import Path
+import hashlib
 import json
-import urllib.request
+import os
+import re
 import subprocess
-import tempfile
+import sys
+import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+from app_info import VERSION, ASSET_NAME, REPO_OWNER, REPO_NAME
+from storage import atomic_bytes
+from native_workers import self_command, independent_environment
 
-CURRENT_VERSION = "1.0.1"
-REPO_OWNER = "dpqksr5501"
-REPO_NAME = "schedule-doc-system"
-GITHUB_API_URL = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
+CURRENT_VERSION = VERSION
+GITHUB_API_URL = f'https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest'
+MAX_DOWNLOAD = 250 * 1024 * 1024
+_UPDATE_LOCK = threading.Lock()
+_STABLE = re.compile(r'v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?')
+
 
 def get_current_version():
-    return CURRENT_VERSION
+    return VERSION
 
-def check_for_updates():
-    """
-    GitHub Releases API를 호출하여 최신 버전 및 .exe 다운로드 링크를 확인합니다.
-    오프라인이거나 아직 릴리즈가 없는 경우에도 절대 오류 없이 안전하게 응답.
-    """
-    try:
-        req = urllib.request.Request(
-            GITHUB_API_URL,
-            headers={
-                'User-Agent': f'GunsuScheduleApp/{CURRENT_VERSION}',
-                'Accept': 'application/vnd.github.v3+json'
-            }
-        )
-        with urllib.request.urlopen(req, timeout=4) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-            tag_name = data.get('tag_name', '').strip() # 예: "v1.0.1" 또는 "1.0.1"
-            latest_version = tag_name.lstrip('v')
-            release_notes = data.get('body', '새로운 기능 개선 및 안정성 향상이 포함되어 있습니다.')
 
-            # 첨부된 .exe 파일의 다운로드 URL 탐색
-            exe_download_url = None
-            for asset in data.get('assets', []):
-                name = asset.get('name', '')
-                if name.endswith('.exe'):
-                    exe_download_url = asset.get('browser_download_url')
-                    break
+def _version(value):
+    match = _STABLE.fullmatch(value.strip()) if isinstance(value, str) else None
+    if not match:
+        raise ValueError('정식 버전 번호가 올바르지 않습니다.')
+    return tuple(int(part) for part in match.groups())
 
-            has_update = _is_newer_version(latest_version, CURRENT_VERSION)
-
-            return {
-                'success': True,
-                'hasUpdate': has_update,
-                'currentVersion': CURRENT_VERSION,
-                'latestVersion': latest_version,
-                'releaseNotes': release_notes,
-                'downloadUrl': exe_download_url
-            }
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            # 아직 GitHub에 Release가 등록되지 않은 초기 상태
-            return {
-                'success': True,
-                'hasUpdate': False,
-                'currentVersion': CURRENT_VERSION,
-                'message': f'현재 최신 버전(v{CURRENT_VERSION})을 사용하고 있습니다. (등록된 릴리즈 없음)'
-            }
-        return {
-            'success': False,
-            'hasUpdate': False,
-            'currentVersion': CURRENT_VERSION,
-            'message': f'서버 응답 오류 (코드: {e.code})'
-        }
-    except Exception as e:
-        return {
-            'success': False,
-            'hasUpdate': False,
-            'currentVersion': CURRENT_VERSION,
-            'message': '네트워크 연결을 확인할 수 없습니다. (오프라인 모드)'
-        }
-
-def apply_update(download_url):
-    """
-    새로운 버전의 .exe 파일을 다운로드하여 현재 실행 중인 파일을
-    윈도우 파일 잠금을 우회하여 안전하게 교체(Swap)하고 재실행합니다.
-    """
-    if not download_url:
-        return {'success': False, 'message': '다운로드 URL이 제공되지 않았습니다.'}
-
-    try:
-        # 현재 실행 중인 파일 경로 파악
-        if getattr(sys, 'frozen', False):
-            current_exe = sys.executable
-        else:
-            current_exe = os.path.abspath(sys.argv[0])
-
-        # 1. 임시 디렉토리에 새 .exe 다운로드
-        temp_dir = tempfile.mkdtemp()
-        temp_exe = os.path.join(temp_dir, "update_new.exe")
-
-        req = urllib.request.Request(
-            download_url,
-            headers={'User-Agent': f'GunsuScheduleApp/{CURRENT_VERSION}'}
-        )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            with open(temp_exe, 'wb') as f:
-                while True:
-                    chunk = resp.read(65536)
-                    if not chunk:
-                        break
-                    f.write(chunk)
-
-        # 파일 크기 검증 (최소 5MB 이상 정상 exe 여부)
-        if not os.path.exists(temp_exe) or os.path.getsize(temp_exe) < 1024 * 1024:
-            return {'success': False, 'message': '다운로드된 파일이 손상되었거나 완전하지 않습니다.'}
-
-        # 2. 윈도우 원자적 스와퍼(Atomic Swapper) 배치 스크립트 생성
-        # 현재 프로그램이 종료되길 1~2초 대기 후, 파일 교체 및 새 프로그램 시작
-        swap_bat = os.path.join(temp_dir, "swap_and_restart.bat")
-        bat_script = f"""@echo off
-chcp 65001 > nul
-echo [군수실 시스템] 최신 버전으로 자동 패치 중입니다...
-timeout /t 1 /nobreak > nul
-
-:retry
-move /y "{temp_exe}" "{current_exe}" > nul 2>&1
-if %errorlevel% neq 0 (
-    timeout /t 1 /nobreak > nul
-    goto retry
-)
-
-echo [군수실 시스템] 패치 완료! 프로그램을 다시 시작합니다.
-start "" "{current_exe}"
-del "%~f0"
-exit
-"""
-        with open(swap_bat, 'wb') as f:
-            f.write(bat_script.encode('cp949'))
-
-        # 3. 스와퍼 스크립트를 독립 프로세스로 실행하고 현재 프로그램 즉시 종료
-        subprocess.Popen(
-            f'cmd.exe /c "{swap_bat}"',
-            shell=True,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-        )
-
-        # 현재 프로세스 종료 스케줄 (JS 응답 후 즉시 종료되도록)
-        def exit_soon():
-            time.sleep(0.5)
-            os._exit(0)
-
-        import threading
-        threading.Thread(target=exit_soon, daemon=True).start()
-
-        return {'success': True, 'message': '새 버전을 다운로드했습니다. 1초 후 자동으로 재시작됩니다!'}
-
-    except Exception as e:
-        return {'success': False, 'message': f'업데이트 적용 중 오류가 발생했습니다: {str(e)}'}
 
 def _is_newer_version(latest, current):
-    """시맨틱 버전 비교 (예: 1.0.1 > 1.0.0)"""
     try:
-        def parse_v(v):
-            return [int(x) for x in v.lstrip('v').split('.') if x.isdigit()]
-        return parse_v(latest) > parse_v(current)
-    except Exception:
+        return _version(latest) > _version(current)
+    except ValueError:
         return False
+
+
+def _request(url):
+    return urllib.request.Request(url, headers={'User-Agent': f'GunsuSchedule/{VERSION}',
+                                                'Accept': 'application/vnd.github+json'})
+
+
+def _fetch_release():
+    with urllib.request.urlopen(_request(GITHUB_API_URL), timeout=8) as response:
+        content = response.read(2 * 1024 * 1024 + 1)
+    if len(content) > 2 * 1024 * 1024:
+        raise ValueError('업데이트 안내가 너무 큽니다.')
+    data = json.loads(content)
+    if not isinstance(data, dict) or data.get('draft') or data.get('prerelease'):
+        raise ValueError('정식 배포 정보가 아닙니다.')
+    version = data.get('tag_name', '').removeprefix('v')
+    _version(version)
+    assets = [a for a in data.get('assets', []) if a.get('name') == ASSET_NAME and a.get('state') == 'uploaded']
+    asset = assets[0] if len(assets) == 1 else None
+    if asset:
+        url = urllib.parse.urlsplit(asset.get('browser_download_url', ''))
+        expected = f'/{REPO_OWNER}/{REPO_NAME}/releases/download/{data["tag_name"]}/{ASSET_NAME}'
+        if url.scheme != 'https' or url.netloc != 'github.com' or urllib.parse.unquote(url.path) != expected:
+            raise ValueError('업데이트 파일의 출처가 올바르지 않습니다.')
+        if type(asset.get('size')) is not int or not 1024 <= asset['size'] <= MAX_DOWNLOAD:
+            raise ValueError('업데이트 파일 크기가 올바르지 않습니다.')
+        if not re.fullmatch(r'sha256:[0-9a-fA-F]{64}', asset.get('digest') or ''):
+            asset = None  # Missing digest: show release, but do not execute an unverifiable file.
+    return version, data.get('body') or '', asset
+
+
+def check_for_updates():
+    base = {'currentVersion': VERSION, 'hasUpdate': False}
+    try:
+        version, notes, asset = _fetch_release()
+        return {**base, 'success': True, 'hasUpdate': _is_newer_version(version, VERSION),
+                'latestVersion': version, 'releaseNotes': str(notes)[:12000],
+                'canApply': asset is not None,
+                'message': '' if asset else '검증 가능한 실행 파일이 아직 없습니다. 현재 버전은 계속 사용할 수 있습니다.'}
+    except urllib.error.HTTPError as error:
+        return {**base, 'success': False, 'message': '배포 정보를 아직 찾지 못했습니다.' if error.code == 404 else
+                f'업데이트 서버에 연결하지 못했습니다. (응답 {error.code})'}
+    except (ValueError, TypeError, KeyError) as error:
+        return {**base, 'success': False, 'message': '업데이트 정보를 검증하지 못했습니다. ' + str(error)}
+    except Exception:
+        return {**base, 'success': False, 'message': '네트워크 연결이 없어 업데이트를 확인하지 못했습니다. 일정 관리는 계속 가능합니다.'}
+
+
+class SafeRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        url = urllib.parse.urlsplit(newurl)
+        if url.scheme != 'https' or url.netloc not in ('github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'):
+            raise ValueError('허용되지 않은 다운로드 이동 경로입니다.')
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _download(asset, target):
+    start, digest, total = time.monotonic(), hashlib.sha256(), 0
+    opener = urllib.request.build_opener(SafeRedirect())
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staged = target.with_suffix('.download')
+    try:
+        with opener.open(_request(asset['browser_download_url']), timeout=15) as response, staged.open('wb') as stream:
+            while True:
+                if time.monotonic() - start > 180:
+                    raise TimeoutError('업데이트 다운로드 시간이 지났습니다.')
+                chunk = response.read(65536)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > asset['size'] or total > MAX_DOWNLOAD:
+                    raise ValueError('업데이트 파일이 예상 크기를 초과했습니다.')
+                digest.update(chunk)
+                stream.write(chunk)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if total != asset['size'] or digest.hexdigest() != asset['digest'].split(':')[1].lower():
+            raise ValueError('다운로드 파일의 크기 또는 해시가 일치하지 않습니다.')
+        with staged.open('rb') as stream:
+            if stream.read(2) != b'MZ':
+                raise ValueError('Windows 실행 파일 형식이 아닙니다.')
+        os.replace(staged, target)
+    finally:
+        if staged.exists():
+            staged.unlink()
+
+
+def prepare_update(paths):
+    if os.name != 'nt' or not getattr(sys, 'frozen', False):
+        return {'success': False, 'message': '배포된 Windows 실행 파일에서만 업데이트할 수 있습니다.'}
+    if not _UPDATE_LOCK.acquire(blocking=False):
+        return {'success': False, 'message': '이미 업데이트를 준비하고 있습니다.'}
+    try:
+        version, _, asset = _fetch_release()
+        if not _is_newer_version(version, VERSION) or asset is None:
+            raise ValueError('검증된 새 정식 버전이 없습니다.')
+        target = paths.installation / 'versions' / version / ASSET_NAME
+        _download(asset, target)
+        token = uuid.uuid4().hex
+        plan = paths.updates / (token + '.json')
+        atomic_bytes(plan, json.dumps({'token': token, 'version': version, 'target': str(target),
+                                     'previous': sys.executable, 'digest': asset['digest'],
+                                     'size': asset['size']}).encode('utf-8'))
+        subprocess.Popen(self_command('--monitor-update', token), env=independent_environment(),
+                         creationflags=subprocess.CREATE_NO_WINDOW)
+        return {'success': True, 'message': '검증된 새 버전을 시작합니다. 기존 버전은 복구용으로 보관합니다.'}
+    except Exception as error:
+        return {'success': False, 'message': '업데이트 준비 실패: ' + str(error)}
+    finally:
+        _UPDATE_LOCK.release()
+
+
+def monitor_update(paths, token):
+    if not re.fullmatch(r'[0-9a-f]{32}', token):
+        raise ValueError('잘못된 업데이트 작업 번호')
+    plan_path = paths.updates / (token + '.json')
+    plan = json.loads(plan_path.read_text(encoding='utf-8'))
+    previous = Path(plan['previous']).resolve()
+    if previous != Path(sys.executable).resolve():
+        raise ValueError('이전 버전의 실행 경로가 올바르지 않습니다.')
+    def rollback(message):
+        atomic_bytes(paths.updates / 'last_failure.txt', message.encode('utf-8'))
+        try:
+            if previous.is_file():
+                subprocess.Popen([str(previous)], env=independent_environment(), creationflags=subprocess.CREATE_NO_WINDOW)
+        except OSError:
+            atomic_bytes(paths.updates / 'last_failure.txt',
+                         (message + '\n바탕화면 바로가기로 기존 버전을 실행해 주세요.').encode('utf-8'))
+        return 1
+    _version(plan['version'])
+    target = Path(plan['target']).resolve()
+    expected = (paths.installation / 'versions' / plan['version'] / ASSET_NAME).resolve()
+    try:
+        if target != expected or target.stat().st_size != plan['size'] or ('sha256:' + hashlib.sha256(target.read_bytes()).hexdigest()) != plan['digest'].lower():
+            return rollback('새 버전 파일의 검증이 실패해 기존 버전을 다시 실행했습니다.')
+    except OSError:
+        return rollback('새 버전 파일을 읽지 못해 기존 버전을 다시 실행했습니다.')
+    # The old GUI closes normally. The new version waits for its mutex to be released.
+    try:
+        process = subprocess.Popen([str(target), '--update-token', token], env=independent_environment(),
+                                   creationflags=subprocess.CREATE_NO_WINDOW)
+    except OSError:
+        return rollback('새 버전 실행이 실패해 기존 버전을 다시 실행했습니다.')
+    ready = paths.updates / (token + '.ready')
+    for _ in range(90):
+        if ready.exists():
+            return 0  # New app activates the desktop shortcut only after successful bootstrap.
+        if process.poll() is not None:
+            return rollback('새 버전이 시작되지 않아 기존 버전을 다시 실행했습니다.')
+        time.sleep(1)
+    # Do not kill a GUI that may be waiting for an institution security dialog.
+    # The old shortcut remains available; this failure is shown on the next launch.
+    atomic_bytes(paths.updates / 'last_failure.txt', '새 버전 시작을 확인하지 못했습니다. 바탕화면 바로가기로 기존 버전을 실행해 주세요.'.encode('utf-8'))
+    return 1

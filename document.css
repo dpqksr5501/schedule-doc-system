@@ -1,0 +1,27 @@
+/* Geometry comes from document_layout.py; this file only presents that plan. */
+.plan-paper{width:210mm;max-width:none;min-height:297mm;padding:5mm;overflow:visible;color:#000}
+.plan-paper.landscape{width:297mm;min-height:210mm}
+.plan-table{border-collapse:collapse;table-layout:fixed;margin:0 auto;color:#000}
+.plan-table td{padding:.635mm;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.2;vertical-align:top}
+.plan-table img{display:block;margin:0 auto;object-fit:contain}
+.plan-event{display:block;width:100%;border:0;padding:0;background:transparent;color:inherit;font:inherit;line-height:inherit;text-align:inherit;white-space:inherit;overflow-wrap:inherit}
+.plan-event:hover{text-decoration:underline;text-decoration-thickness:1px}
+.plan-event:focus-visible{outline:2px solid #527fa3;outline-offset:2px}
+.plan-paper .paper-footer{margin:2mm auto 0;padding:0;width:100%;font-size:8pt;color:#777;border:0}
+.plan-text-segment{display:block}
+#documentStage[aria-busy=true]{opacity:.65}
+.paper-frame{position:relative;margin:0 auto 24px}
+.paper-frame>.plan-paper{position:absolute;left:0;top:0;margin:0;transform-origin:top left}
+.preview-fit{display:flex;gap:5px;align-items:center;white-space:nowrap;color:#465b6c}
+.document-info{flex-wrap:wrap}
+@media print{
+  #documentStage{overflow:visible}
+  .paper-frame{width:auto!important;height:auto!important;margin:0}
+  .paper-frame>.plan-paper{position:static;transform:none!important}
+  .plan-paper,.plan-paper.landscape{width:auto;max-width:none;min-height:0;padding:0;margin:0;border:0;box-shadow:none;break-after:page}
+  .plan-table{margin:0 auto}
+  .plan-table td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .plan-table tr{break-inside:avoid;page-break-inside:avoid}
+  .plan-paper:last-child{break-after:auto}
+  .plan-event:hover{text-decoration:none}
+}

@@ -1,279 +1,369 @@
-# -*- coding: utf-8 -*-
-"""
-군수실 일정 통합 관리 시스템 - 메인 데스크톱 실행 파일
-보은군 군수실 전용 (Powered by Python & WebView2)
-GitHub Repository: https://github.com/dpqksr5501/schedule-doc-system
-"""
-
-import os
-import sys
+"""Native entry point. All business services are usable without importing pywebview."""
+from pathlib import Path
+import csv
+import html
+import io
 import json
-import shutil
-import subprocess
-import webview
-from datetime import datetime
-import hwpx_generator
+import logging
+from logging.handlers import RotatingFileHandler
+import os
+import re
+import sys
+import threading
+import time
+import uuid
+from app_info import APP_NAME, VERSION
+from app_paths import AppPaths, resource_dir
+from schedule_domain import parse_snapshot, timestamp, validate_snapshot
+from storage import SnapshotStore, atomic_bytes, encode
+from document_engine import document_model, generate_document
+from document_layout import build_plan
+import installation
 import updater
-
-# 애플리케이션 기본 경로
-if getattr(sys, 'frozen', False):
-    BASE_DIR = sys._MEIPASS
-else:
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-INDEX_HTML = os.path.join(BASE_DIR, "index.html")
-ICON_PATH = os.path.join(BASE_DIR, "assets", "app_icon.ico")
-DESKTOP_DIR = os.path.join(os.path.expanduser("~"), "Desktop")
-OUTPUT_DIR = os.path.join(DESKTOP_DIR, "군수실_일정_출력문서")
-
-# 영구 데이터 저장소 (%APPDATA%\GunsuSchedule)
-APPDATA_DIR = os.path.join(os.getenv('APPDATA', os.path.expanduser("~")), "GunsuSchedule")
-DATA_FILE_PATH = os.path.join(APPDATA_DIR, "schedule_data.json")
-MANUAL_FILE_PATH = os.path.join(OUTPUT_DIR, "★ 군수실_일정표_사용설명서.txt")
-
-MANUAL_CONTENT = """========================================================================
-    [보은군 군수실] 일정 통합 관리 시스템 간편 사용설명서
-========================================================================
-
-단 한 번만 입력하시면 일일·주간·월간 일정표가 자동으로 만들어지고,
-실제 한컴오피스 한글 문서로 1초 만에 저장되는 프로그램입니다!
-
-------------------------------------------------------------------------
- 1. 출력 파일 형식 안내 (★ MS 워드가 아닙니다!)
-------------------------------------------------------------------------
-* 100% 공공기관 표준인 [한컴오피스 한글 문서]로 출력됩니다.
-  - 최신 한글 표준 규격: .hwpx 파일 지원
-  - 기존 구버전 규격: .hwp 파일 지원
-* 화면 상단에서 [한글(HWPX) 저장] 또는 [HWP 저장] 버튼을 누르시면,
-  바탕화면의 [군수실_일정_출력문서] 폴더에 실제 한글 파일이 즉시 생성됩니다.
-  (생성 후 파일이 든 폴더가 자동으로 화면에 열립니다)
-
-* 컴퓨터에 프린터가 연결되어 있다면 [A4 바로 인쇄]를 눌러
-  종이로 즉시 깨끗하게 출력하실 수도 있습니다.
-
-
-------------------------------------------------------------------------
- 2. 초간단 3단계 사용 순서
-------------------------------------------------------------------------
- [ 1단계 ] 우측 상단 [ ➕ 새 일정 등록 ] 누르고 내용 입력하기
-           (날짜, 시간, 행사명, 장소, 부서, 글씨 색상)
-           ※ 상단 연초록색 한 줄 입력창에 대충 적고 엔터 치셔도 됩니다!
-
- [ 2단계 ] 상단 탭에서 원하는 양식 고르기
-           - [📄 1. 일일 일정표] : 군수님 당일 일정표 A4 1장
-           - [📑 2. 주간 행사계획] : 보은군청 공식 주간행사계획 표
-           - [🗓️ 3. 월간 일정표] : 한 달 치 달력형 일정표
-
- [ 3단계 ] [ 🖨️ A4 바로 인쇄 ] 또는 [ 📄 한글(HWPX) 저장 ] 누르면 끝!
-
-
-------------------------------------------------------------------------
- 3. 알아두시면 10배 편해지는 핵심 꿀팁
-------------------------------------------------------------------------
-★ 꿀팁 1 : 표 위의 일정을 마우스로 "콕" 클릭해 보세요!
-   - 한글 문서 화면에 적힌 일정을 마우스로 클릭하면, 그 자리에서 바로
-     수정창이 열립니다. 오타 수정이나 글자 색상 변경이 1초 만에 끝납니다.
-
-★ 꿀팁 2 : 글씨 색상 원클릭 선택
-   - 등록창 아래에 큼직한 컬러 버튼이 있습니다.
-     🟢 초록색 : 군수님 참석 (일일일정표에도 자동 반영)
-     🔵 파란색 : 부군수님 참석
-     ⚫ 검정색 : 일반 / 부서 행사
-     🔴 빨간색 : 중요 / 특별 행사
-
-★ 꿀팁 3 : [지난주 일정 복사] 버튼 활용
-   - 주간 탭에서 [📋 지난주 복사]를 누르면, 지난주 일정이 이번 주로
-     날짜만 싹 바뀌어 복제됩니다. 매주 반복되는 회의를 다시 칠 필요가 없습니다!
-
-★ 꿀팁 4 : 실수로 지웠을 때 [휴지통] 복구
-   - 일정을 잘못 삭제하셨더라도 상단 [⚙️ 도구] -> [🗑️ 삭제 휴지통]에서
-     언제든 클릭 한 번으로 되살릴 수 있습니다.
-
-
-------------------------------------------------------------------------
- 4. 파일 저장 위치
-------------------------------------------------------------------------
-* 모든 한글 출력 파일은 바탕화면의 [군수실_일정_출력문서] 폴더에
-  날짜별로 차곡차곡 안전하게 보관됩니다.
-
-
-------------------------------------------------------------------------
- 5. 프로그램 자동 업데이트 안내
-------------------------------------------------------------------------
-* 제가 새로운 기능이나 서식을 추가해서 업데이트를 올리면,
-  프로그램 상단 [⚙️ 도구] -> [🔄 프로그램 패치 확인]을 누르거나
-  프로그램을 켤 때 알아서 새 버전을 감지하고 최신으로 바뀝니다!
-========================================================================
-              - 항상 건강하시고 힘내세요, 아들 올림 -
-========================================================================
-"""
-
-def ensure_manual_file():
-    """출력 폴더에 항상 최신 설명서가 존재하도록 보장"""
-    try:
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
-        with open(MANUAL_FILE_PATH, 'w', encoding='utf-8-sig') as f:
-            f.write(MANUAL_CONTENT)
-    except Exception:
-        pass
+from native_workers import convert_bounded
+from hwp_validation import validate_hwp
 
 
 class DesktopApi:
-    """JavaScript 프론트엔드와 통신하는 Python 네이티브 브릿지 API"""
-    
-    def __init__(self):
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
-        os.makedirs(APPDATA_DIR, exist_ok=True)
-        ensure_manual_file()
-
-    def get_version(self):
-        """현재 앱 버전 반환"""
-        return updater.get_current_version()
-
-    def check_update(self):
-        """GitHub Releases 최신 업데이트 확인"""
-        return updater.check_for_updates()
-
-    def apply_update(self, download_url):
-        """GitHub Releases 최신 버전 다운로드 및 자동 재실행 자가 교체"""
-        return updater.apply_update(download_url)
-
-    def save_persistent_data(self, data_str):
-        """아버님의 소중한 일정 데이터를 %APPDATA%에 영구 보존 및 자동 백업 (원자적 쓰기)"""
+    def __init__(self, paths=None):
+        self._paths = paths or AppPaths.current()
+        self._store = SnapshotStore(self._paths)
+        self._window = None
+        self._lock = threading.RLock()
+        self._busy = False
+        self._output_error = ''
+        self._installed = None
+        self._update_token = None
+        self._last_output = None
+        self._editing = False
+        self._allow_close = False
         try:
-            # 기존 데이터가 존재하면 .bak 파일로 안전 복사
-            if os.path.exists(DATA_FILE_PATH) and os.path.getsize(DATA_FILE_PATH) > 0:
+            self._ensure_output()
+        except OSError as error:
+            self._output_error = '바탕화면 출력 폴더를 만들지 못했습니다. 폴더 권한을 확인해 주세요. ' + str(error)
+
+    def _ensure_output(self):
+        self._paths.ensure_output()
+        manual = (resource_dir() / 'assets' / 'manual.html').read_text(encoding='utf-8')
+        manual = manual.replace('{{OUTPUT_PATH}}', html.escape(str(self._paths.output)))
+        manual = manual.replace('{{DATA_PATH}}', html.escape(str(self._paths.data)))
+        manual = manual.replace('{{APP_PATH}}', html.escape(str(self._paths.installation)))
+        atomic_bytes(self._paths.output / '먼저_읽어주세요.html', manual.encode('utf-8'))
+        plain = (resource_dir() / '사용설명서.txt').read_text(encoding='utf-8-sig')
+        atomic_bytes(self._paths.output / '사용설명서.txt', plain.encode('utf-8-sig'))
+        quick = (resource_dir() / '처음사용_5분안내.html').read_bytes()
+        atomic_bytes(self._paths.output / '처음사용_5분안내.html', quick)
+
+    def _failure(self, error):
+        logging.exception('Desktop operation failed')
+        return {'success': False, 'message': str(error)}
+
+    def bootstrap(self):
+        result = {'success': True, 'version': VERSION, 'outputPath': str(self._paths.output),
+                  'dataPath': str(self._paths.data), 'appPath': str(self._paths.installation),
+                  'outputError': self._output_error, 'recovery': None, 'readOnly': False}
+        try:
+            result['snapshot'] = self._store.load()
+            result['recovery'] = self._store.recovery
+        except Exception as error:
+            from schedule_domain import empty_snapshot
+            result.update(snapshot=empty_snapshot(), readOnly=True, recoveryError=str(error))
+        failure = self._paths.updates / 'last_failure.txt'
+        if failure.exists():
+            result['updateWarning'] = failure.read_text(encoding='utf-8')
+        return result
+
+    def ready(self):
+        try:
+            if self._update_token and self.bootstrap()['readOnly']:
+                raise ValueError('새 버전에서 일정 데이터를 읽지 못해 기존 바로가기를 유지합니다.')
+            if self._installed is not None:
+                installation.activate(self._paths, self._installed)
+            if self._update_token:
+                atomic_bytes(self._paths.updates / (self._update_token + '.ready'), b'ready')
+                failure = self._paths.updates / 'last_failure.txt'
                 try:
-                    shutil.copy2(DATA_FILE_PATH, DATA_FILE_PATH + ".bak")
+                    failure.unlink(missing_ok=True)
+                except OSError:
+                    logging.warning('Previous update notice could not be removed')
+            return {'success': True}
+        except Exception as error:
+            return self._failure(error)
+
+    def save_persistent_data(self, content, expected_revision):
+        try:
+            with self._lock:
+                if self._busy:
+                    raise ValueError('문서 저장 또는 업데이트가 끝난 뒤 다시 저장해 주세요.')
+                snapshot = self._store.save(parse_snapshot(content), expected_revision)
+            return {'success': True, 'snapshot': snapshot}
+        except Exception as error:
+            return self._failure(error)
+
+    def restore_data(self, content, expected_revision):
+        try:
+            with self._lock:
+                if self._busy:
+                    raise ValueError('진행 중인 작업이 끝난 뒤 복원해 주세요.')
+                snapshot = self._store.import_snapshot(parse_snapshot(content), expected_revision)
+            return {'success': True, 'snapshot': snapshot}
+        except Exception as error:
+            return self._failure(error)
+
+    def preview_restore(self, content):
+        try:
+            snapshot = parse_snapshot(content)
+            dates = sorted(e['date'] for e in snapshot['events'])
+            return {'success': True, 'count': len(snapshot['events']), 'trashCount': len(snapshot['deletedEvents']),
+                    'savedAt': snapshot['savedAt'], 'firstDate': dates[0] if dates else '', 'lastDate': dates[-1] if dates else ''}
+        except Exception as error:
+            return self._failure(error)
+
+    def backup_data(self):
+        try:
+            self._ensure_output()
+            snapshot = self._store.load()
+            path = self._paths.output / '데이터백업' / ('일정데이터_' + self._stamp() + '.json')
+            atomic_bytes(path, encode(snapshot))
+            self._last_output = path
+            self._show_file(path)
+            return {'success': True, 'path': str(path), 'message': '일정과 업무 메모를 함께 백업했습니다.'}
+        except Exception as error:
+            return self._failure(error)
+
+    def list_backups(self):
+        return {'success': True, 'items': self._store.list_backups()}
+
+    def get_backup(self, identifier):
+        try:
+            return {'success': True, 'content': encode(self._store.read_backup(identifier)).decode('utf-8')}
+        except Exception as error:
+            return self._failure(error)
+
+    def preview_document(self, request):
+        try:
+            snapshot = self._store.load()
+            return {'success': True, 'plan': build_plan(document_model(snapshot, request)), 'revision': snapshot['revision']}
+        except Exception as error:
+            return self._failure(error)
+
+    def export_document(self, request, file_format='hwp'):
+        if not self._lock.acquire(blocking=False):
+            return {'success': False, 'message': '다른 저장 작업이 진행 중입니다.'}
+        try:
+            if self._busy:
+                raise ValueError('이미 문서를 저장하고 있습니다.')
+            self._busy = True
+            if file_format not in ('hwpx', 'hwp'):
+                raise ValueError('출력 파일 형식이 올바르지 않습니다.')
+            self._ensure_output()
+            model = document_model(self._store.load(), request)
+            folder = {'daily': '일일일정', 'weekly': '주간일정', 'monthly': '월간일정'}[model['view']]
+            filename = folder + '_' + model['start'] + '_' + self._stamp() + '.hwpx'
+            path = self._paths.output / folder / filename
+            result = generate_document(model, path)
+            fallback = False
+            warning = ''
+            if file_format == 'hwp':
+                target = path.with_suffix('.hwp')
+                try:
+                    ok, warning = convert_bounded(path, target)
+                    if ok:
+                        validate_hwp(target)
                 except Exception:
-                    pass
+                    logging.exception('HWP conversion or validation failed; preserve intermediate HWPX')
+                    ok, warning = False, '한글 변환 결과를 확인하지 못했습니다. 한글 설치와 파일 접근 승인을 확인해 주세요.'
+                if ok:
+                    intermediate = path
+                    path = target
+                    try:
+                        intermediate.unlink()
+                    except OSError:
+                        logging.warning('HWP saved; intermediate HWPX could not be removed: %s', intermediate)
+                else:
+                    fallback = True
+                    # Keep only valid output; an incomplete HWP is not a usable fallback.
+                    if target.exists():
+                        try:
+                            target.unlink()
+                        except OSError:
+                            logging.warning('Incomplete HWP could not be removed: %s', target)
+            self._last_output = path
+            self._show_file(path)
+            return {'success': not fallback, 'path': str(path), 'filename': path.name, 'pages': result['pages'],
+                    'requestedFormat': file_format, 'actualFormat': path.suffix[1:],
+                    'fallback': fallback, 'message': ('HWP 저장에 실패했습니다. ' + warning +
+                    '\n작업 내용은 HWPX 중간 문서로 보관했습니다. 한글에서 열어 [다른 이름으로 저장] → [한글 문서 (*.hwp)]를 선택해 주세요.') if fallback else
+                    f'{folder} {file_format.upper()} 문서를 저장했습니다.'}
+        except Exception as error:
+            return self._failure(error)
+        finally:
+            self._busy = False
+            self._lock.release()
 
-            # 원자적 쓰기 (.tmp 파일에 먼저 기록 후 교체)
-            tmp_path = DATA_FILE_PATH + ".tmp"
-            with open(tmp_path, 'w', encoding='utf-8') as f:
-                f.write(data_str)
-
-            if os.path.exists(DATA_FILE_PATH):
-                os.replace(tmp_path, DATA_FILE_PATH)
-            else:
-                os.rename(tmp_path, DATA_FILE_PATH)
-
-            return {'success': True}
-        except Exception as e:
-            return {'success': False, 'message': str(e)}
-
-    def load_persistent_data(self):
-        """%APPDATA%에 영구 보존된 데이터 로드 (손상 시 .bak 자동 복구)"""
+    def export_csv(self):
         try:
-            if os.path.exists(DATA_FILE_PATH):
-                with open(DATA_FILE_PATH, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    if content.strip():
-                        return {'success': True, 'data': content}
-            
-            # 메인 파일이 없거나 비어있는 경우 백업 파일(.bak)에서 복구 시도
-            bak_path = DATA_FILE_PATH + ".bak"
-            if os.path.exists(bak_path):
-                with open(bak_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    if content.strip():
-                        return {'success': True, 'data': content, 'recovered_from_backup': True}
-
-            return {'success': False, 'message': 'No file'}
-        except Exception as e:
-            return {'success': False, 'message': str(e)}
-
-    def open_manual(self):
-        """설명서 파일을 윈도우 기본 텍스트 뷰어(메모장)로 띄움"""
-        try:
-            ensure_manual_file()
-            if os.name == 'nt':
-                os.startfile(MANUAL_FILE_PATH)
-            return {'success': True}
-        except Exception as e:
-            return {'success': False, 'message': str(e)}
-
-    def export_hwpx(self, week_data):
-        """주간 일정 데이터를 받아 실제 한글(.hwpx) 파일로 즉시 생성"""
-        try:
-            ensure_manual_file()
-            period_clean = week_data.get('period_str', '주간일정').replace(' ', '').replace('~', '_').replace('.', '')
-            today_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"주간주요행사계획_{period_clean}_{today_str}.hwpx"
-            out_path = os.path.join(OUTPUT_DIR, filename)
-
-            hwpx_generator.generate_weekly_hwpx(week_data, out_path)
-
-            return {
-                'success': True,
-                'path': out_path,
-                'filename': filename,
-                'message': f"한글(HWPX) 파일이 성공적으로 생성되었습니다!\n저장위치: {out_path}"
-            }
-        except Exception as e:
-            return {
-                'success': False,
-                'message': f"HWPX 생성 중 오류가 발생했습니다: {str(e)}"
-            }
-
-    def export_hwp(self, week_data):
-        """HWPX 생성 후 OLE Automation을 통해 완벽한 구버전 HWP 파일로 변환 저장"""
-        try:
-            ensure_manual_file()
-            hwpx_res = self.export_hwpx(week_data)
-            if not hwpx_res['success']:
-                return hwpx_res
-
-            hwpx_path = hwpx_res['path']
-            hwp_path = hwpx_path[:-5] + ".hwp"
-
-            ok, err_or_path = hwpx_generator.convert_hwpx_to_hwp(hwpx_path, hwp_path)
-            if ok:
-                return {
-                    'success': True,
-                    'path': hwp_path,
-                    'filename': os.path.basename(hwp_path),
-                    'message': f"한글(HWP) 파일이 성공적으로 생성되었습니다!\n저장위치: {hwp_path}"
-                }
-            else:
-                return {
-                    'success': True,
-                    'path': hwpx_path,
-                    'isHwpxFallback': True,
-                    'message': f"한글(HWPX) 파일로 생성되었습니다.\n(참고: 한글 프로그램 연동 불가로 HWPX로 저장됨)\n저장위치: {hwpx_path}"
-                }
-        except Exception as e:
-            return {
-                'success': False,
-                'message': f"HWP 변환 중 오류: {str(e)}"
-            }
+            self._ensure_output()
+            stream = io.StringIO(newline='')
+            writer = csv.writer(stream)
+            writer.writerow(['일자', '시작', '종료', '행사명', '장소', '주관부서', '참석 구분', '중요도', '상태'])
+            for event in sorted(self._store.load()['events'], key=lambda e: (e['date'], e['time'])):
+                values = [event[k] for k in ('date', 'time', 'endTime', 'title', 'place', 'dept', 'attendee', 'priority', 'status')]
+                values[6:] = [{'gunsu': '군수님 참석', 'v_gunsu': '부군수님 참석', 'general': '일반 행사'}[event['attendee']],
+                              {'normal': '일반', 'important': '중요'}[event['priority']],
+                              {'confirmed': '확정', 'tentative': '미확정', 'cancelled': '취소'}[event['status']]]
+                writer.writerow(["'" + v if v.lstrip().startswith(('=', '+', '-', '@')) else v for v in values])
+            path = self._paths.output / ('전체일정_' + self._stamp() + '.csv')
+            atomic_bytes(path, stream.getvalue().encode('utf-8-sig'))
+            self._last_output = path
+            self._show_file(path)
+            return {'success': True, 'path': str(path), 'message': '전체 일정 목록을 저장했습니다. 내부 메모는 포함하지 않았습니다.'}
+        except Exception as error:
+            return self._failure(error)
 
     def open_export_folder(self):
-        """저장된 출력 문서 폴더를 윈도우 파일 탐색기로 띄움"""
         try:
-            ensure_manual_file()
-            subprocess.Popen(f'explorer "{OUTPUT_DIR}"')
+            self._ensure_output()
+            if os.name == 'nt':
+                os.startfile(self._paths.output)
             return {'success': True}
-        except Exception as e:
-            return {'success': False, 'message': str(e)}
+        except Exception as error:
+            return self._failure(error)
+
+    def open_last_output(self):
+        if self._last_output is None or not self._last_output.is_file():
+            return {'success': False, 'message': '아직 저장한 문서가 없습니다.'}
+        self._show_file(self._last_output)
+        return {'success': True}
+
+    def open_manual(self):
+        try:
+            self._ensure_output()
+            if os.name == 'nt':
+                os.startfile(self._paths.output / '먼저_읽어주세요.html')
+            return {'success': True}
+        except Exception as error:
+            return self._failure(error)
+
+    def check_update(self):
+        return updater.check_for_updates()
+
+    def apply_update(self):
+        with self._lock:
+            if self._busy:
+                return {'success': False, 'message': '현재 작업이 끝난 뒤 업데이트해 주세요.'}
+            self._busy = True
+        result = updater.prepare_update(self._paths)
+        if result['success'] and self._window is not None:
+            def close_later():
+                time.sleep(1)
+                self._allow_close = True
+                self._window.destroy()
+            threading.Thread(target=close_later, daemon=True).start()
+        else:
+            self._busy = False
+        return result
+
+    def _stamp(self):
+        return timestamp().replace(':', '').replace('-', '').replace('+0900', '') + '_' + uuid.uuid4().hex[:8]
+
+    def _show_file(self, path):
+        if os.name == 'nt':
+            import subprocess
+            try:
+                subprocess.Popen(['explorer.exe', '/select,', str(path)])
+            except OSError:
+                logging.exception('Output saved but Explorer could not be opened')
+
+    def set_editing(self, value):
+        if type(value) is not bool:
+            return {'success': False, 'message': '잘못된 편집 상태'}
+        self._editing = value
+        return {'success': True}
+
+    def _closing(self):
+        if self._allow_close:
+            return True
+        if self._busy or not self._lock.acquire(blocking=False):
+            _notify('저장 작업이 진행 중입니다. 완료된 뒤 프로그램을 닫아 주세요.')
+            return False
+        self._lock.release()
+        if self._editing:
+            _notify('일정 입력 창이 열려 있습니다. 먼저 저장하거나 입력 창의 닫기를 눌러 주세요.')
+            return False
+        return True
+
+
+def _notify(message):
+    if os.name == 'nt':
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, message, APP_NAME, 0x40)
+    else:
+        print(message)
 
 
 def main():
-    api = DesktopApi()
-    
-    # 윈도우 창 설정 (군수실 전용 브랜딩)
-    window = webview.create_window(
-        title=f"군수실 일정 통합 관리 시스템 (v{updater.get_current_version()})",
-        url=INDEX_HTML,
-        js_api=api,
-        width=1380,
-        height=880,
-        min_size=(1050, 720),
-        text_select=True,
-        zoomable=True
-    )
+    # Worker dispatch precedes WebView imports so helpers never open another GUI.
+    if len(sys.argv) == 3 and sys.argv[1] == '--smoke-test':
+        from smoke import run
+        run(sys.argv[2])
+        return
+    if len(sys.argv) == 5 and sys.argv[1] == '--convert-hwp':
+        from hwpx_generator import convert_hwpx_to_hwp
+        ok, message = convert_hwpx_to_hwp(sys.argv[2], sys.argv[3])
+        atomic_bytes(sys.argv[4], json.dumps({'success': ok, 'message': message}).encode('utf-8'))
+        return
+    ui_smoke = Path(sys.argv[2]) if len(sys.argv) == 3 and sys.argv[1] == '--ui-smoke-test' else None
+    paths = AppPaths.isolated(ui_smoke) if ui_smoke else AppPaths.current()
+    paths.ensure_data()
+    handler = RotatingFileHandler(paths.data / 'application.log', maxBytes=1024 * 1024, backupCount=3, encoding='utf-8')
+    logging.basicConfig(level=logging.INFO, handlers=[handler], format='%(asctime)s %(levelname)s %(message)s')
+    if len(sys.argv) == 3 and sys.argv[1] == '--monitor-update':
+        updater.monitor_update(paths, sys.argv[2])
+        return
+    token = sys.argv[2] if len(sys.argv) == 3 and sys.argv[1] == '--update-token' else None
+    if token is not None and not re.fullmatch(r'[0-9a-f]{32}', token):
+        raise ValueError('잘못된 업데이트 작업 정보')
+    instance = installation.SingleInstance()
+    deadline = time.monotonic() + (20 if token else 0)
+    while not ui_smoke and not instance.acquire():
+        if time.monotonic() >= deadline:
+            _notify('일정 관리 프로그램이 이미 실행 중입니다. 작업 표시줄에서 열린 창을 확인해 주세요.')
+            return
+        time.sleep(0.5)
+    try:
+        import webview
+        api = DesktopApi(paths)
+        try:
+            api._installed = installation.prepare_installation(paths) if not ui_smoke else None
+        except Exception:
+            logging.exception('Per-user installation failed')
+            _notify('바탕화면 실행 바로가기를 준비하지 못했습니다. 내려받은 실행 파일로 계속 사용할 수 있습니다.')
+        api._update_token = token
+        # Edge's native message bridge works with file URLs. Avoid a local HTTP
+        # listener, which can be blocked by institution firewalls.
+        api._window = webview.create_window(f'{APP_NAME} · v{VERSION}', url=(resource_dir() / 'index.html').as_uri(),
+                                            width=1380, height=920, min_size=(940, 650),
+                                            text_select=True, zoomable=True)
+        from bridge_security import expose
+        expose(api._window, api)
+        api._window.events.closing += api._closing
+        if ui_smoke:
+            from smoke import attach_ui
+            attach_ui(api._window, api, ui_smoke)
+        # LocalStorage is only a legacy migration source, never the canonical database.
+        webview.start(gui='edgechromium', debug=False, private_mode=False,
+                      storage_path=str(paths.data / 'webview'))
+    except Exception:
+        logging.exception('Application startup failed')
+        _notify('프로그램을 시작하지 못했습니다. Microsoft Edge WebView2 설치와 폴더 권한을 확인해 주세요.\n'
+                '오류 기록: ' + str(paths.data / 'application.log'))
+    finally:
+        instance.close()
 
-    webview.start(debug=False)
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as error:
+        _notify('프로그램 준비 중 오류가 발생했습니다. 사용자 폴더의 접근 권한을 확인해 주세요.\n' + str(error))

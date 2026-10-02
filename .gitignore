@@ -2,6 +2,10 @@
 dist/
 build/
 *.spec
+.venv-build/
+.venv/
+.pytest_cache/
+release/
 
 # Python
 __pycache__/
@@ -11,6 +15,8 @@ __pycache__/
 # Temporary test outputs
 test_output.hwpx
 *.png
+!assets/boeun-symbol.png
+!assets/boeun-slogan.png
 *.hwp
 *.hwpx
 !assets/template.hwpx

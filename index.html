@@ -1,248 +1,97 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>군수실 일정 통합 관리 시스템</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+  <title>군수실 일정 관리</title>
+  <link rel="stylesheet" href="style.css"><link rel="stylesheet" href="document.css">
 </head>
 <body>
-
-  <!-- ===================================================
-       1단: 최상단 메인 헤더 (군수실 전용 브랜딩)
-       =================================================== -->
-  <header class="top-navbar no-print">
-    <div class="top-navbar-inner">
-      <div class="brand-area">
-        <img id="headerSloganImg" class="brand-logo-preview" alt="로고">
-        <div class="brand-title-group">
-          <h1>
-            군수실 일정 통합 관리 시스템
-            <span style="font-size: 11px; background: #e0f2fe; color: #0284c7; padding: 2px 6px; border-radius: 4px; font-weight: 700;">군수실 전용 v1.0.1</span>
-          </h1>
-          <p>보은군 군수실 전용 스마트 솔루션 · 일일 · 주간 · 월간 자동 출력 & HWP/HWPX 변환</p>
-        </div>
-      </div>
-
-      <!-- 중앙 큼직한 4대 네비게이션 탭 -->
-      <div class="nav-tabs-wrapper">
-        <nav class="nav-tabs">
-          <button class="tab-btn active" data-tab="daily">
-            📄 1. 일일 일정표
-          </button>
-          <button class="tab-btn" data-tab="weekly">
-            📑 2. 주간 행사계획
-          </button>
-          <button class="tab-btn" data-tab="monthly">
-            🗓️ 3. 월간 일정표
-          </button>
-          <button class="tab-btn" data-tab="admin">
-            📋 전체 일정 목록
-          </button>
-        </nav>
-      </div>
-
-      <!-- 우측 핵심 액션 -->
-      <div class="top-navbar-actions">
-        <button class="btn btn-primary" id="btnNewEvent" style="font-size: 15px; padding: 9px 20px; box-shadow: 0 2px 8px rgba(30, 64, 175, 0.3);">
-          ➕ 새 일정 등록
-        </button>
-
-        <div class="dropdown" id="toolsDropdown">
-          <button class="btn btn-outline" id="btnToolsMenu">
-            ⚙️ 도구 ▼
-          </button>
-          <div class="dropdown-content">
-            <button class="dropdown-item" id="btnOpenManual" style="color: #1e40af; font-weight: 700;">📖 간편 사용설명서 열기</button>
-            <button class="dropdown-item" id="btnExportExcel">📊 엑셀 다운로드 (CSV)</button>
-            <button class="dropdown-item" id="btnOpenTrash">🗑️ 삭제 휴지통 (<span id="trashCount">0</span>)</button>
-            <button class="dropdown-item" id="btnCheckUpdate">🔄 프로그램 패치 확인</button>
-            <button class="dropdown-item" id="btnBackupData">💾 전체 데이터 백업</button>
-            <button class="dropdown-item" id="btnRestoreData">📂 백업 파일 복원</button>
+  <div class="app-shell">
+    <aside class="sidebar no-print">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">일</span><div><strong>군수실 일정 관리</strong><span id="orgLabel">보은군 · 업무 도우미</span></div></div>
+      <div class="nav-caption">일정과 문서</div>
+      <nav id="viewNav" aria-label="일정 양식">
+        <button class="nav-item active" data-view="daily"><span aria-hidden="true">01</span> 일일 일정표</button>
+        <button class="nav-item" data-view="weekly"><span aria-hidden="true">02</span> 주간 행사계획</button>
+        <button class="nav-item" data-view="monthly"><span aria-hidden="true">03</span> 월간 일정표</button>
+        <button class="nav-item" data-view="list"><span aria-hidden="true">≡</span> 전체 일정 · 검색</button>
+      </nav>
+      <div class="sidebar-divider"></div>
+      <div class="nav-caption">보관과 도움말</div>
+      <button class="nav-item" id="trashBtn">휴지통 <span class="count" id="trashCount">0</span></button>
+      <button class="nav-item" id="toolsBtn">백업 · 복원 · 업데이트</button>
+      <button class="nav-item" id="helpBtn">사용 방법 · 저장 위치</button>
+      <div class="sidebar-bottom"><span class="live-dot"></span> 이 PC에 일정 보관<span id="versionLabel">버전 확인 중</span></div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar no-print">
+        <div><div class="eyebrow">일정 입력부터 한글 문서까지</div><h1 id="viewTitle">일일 일정표</h1></div>
+        <div class="top-actions"><span id="saveStatus" role="status" aria-live="polite">일정을 불러오는 중</span><button class="button secondary" id="undoBtn" disabled title="최근 변경 되돌리기 (Ctrl+Z)">되돌리기</button><button class="button primary" id="newBtn" disabled>＋ 새 일정</button></div>
+      </header>
+      <div id="notice" class="notice no-print" role="status" hidden></div>
+      <main class="content">
+        <details id="usageGuide" class="usage-guide no-print">
+          <summary><strong>사용 순서 안내</strong><span>입력 → 내용 확인 → 한글 문서 저장</span></summary>
+          <div class="guide-body">
+            <ol class="guide-steps">
+              <li><strong><span>1</span> 일정을 입력합니다.</strong><p>＋ 새 일정에서 날짜·시간·행사명을 적고 <b>저장하기</b>를 누릅니다.</p></li>
+              <li><strong><span>2</span> 미리보기를 확인합니다.</strong><p>일일·주간·월간과 날짜를 고른 뒤 시간·장소·주석 포함 여부를 확인합니다.</p></li>
+              <li><strong><span>3</span> 한글 문서를 만듭니다.</strong><p><b>한글 저장 (.hwp)</b>을 누릅니다. 바탕화면 출력 폴더에 새 파일이 생깁니다.</p></li>
+            </ol>
+            <p id="guideTip" class="guide-tip" role="status">첫 일정을 입력하면 일정표가 자동으로 만들어집니다.</p>
+            <div class="guide-actions"><button class="button primary" id="guideNewBtn" disabled>새 일정 입력하기</button><button class="button secondary" id="guideHelpBtn">사용 방법 · 저장 위치</button><span>위 제목을 누르면 안내를 접거나 펼칠 수 있습니다.</span></div>
           </div>
-        </div>
-        <input type="file" id="fileRestoreInput" accept=".json" style="display: none;">
-      </div>
-    </div>
-  </header>
-
-  <!-- ===================================================
-       💡 초간단 3단계 이용 순서 가이드
-       =================================================== -->
-  <div class="step-guide-bar no-print">
-    <div class="step-guide-inner">
-      <div class="step-flow">
-        <span class="step-flow-title">📌 쉬운 사용 순서:</span>
-        <div class="step-item">
-          <span class="step-num">1</span>
-          <span>우측 상단 <strong>[ ➕ 새 일정 등록 ]</strong> 누르기</span>
-        </div>
-        <span class="step-arrow">➔</span>
-        <div class="step-item">
-          <span class="step-num">2</span>
-          <span>상단 탭에서 <strong>[ 일일 / 주간 / 월간 ]</strong> 양식 고르기</span>
-        </div>
-        <span class="step-arrow">➔</span>
-        <div class="step-item">
-          <span class="step-num">3</span>
-          <span><strong>[ 🖨️ 인쇄 ]</strong> 또는 <strong>[ 📄 한글 저장 ]</strong> 누르면 끝!</span>
-        </div>
-      </div>
-      <div class="step-tip">
-        👉 💡 <strong>꿀팁:</strong> A4 종이 위 일정을 <strong>마우스로 클릭</strong>하면 색상과 내용을 바로 수정할 수 있습니다!
-      </div>
+        </details>
+        <section class="control-card no-print" aria-label="일정 선택과 출력">
+          <div class="control-row">
+            <div class="date-controls"><button class="icon-button" id="prevBtn" aria-label="이전 기간">‹</button><input id="selectedDate" type="date" aria-label="기준 날짜"><button class="icon-button" id="nextBtn" aria-label="다음 기간">›</button><button class="button quiet" id="todayBtn">오늘</button><strong id="periodLabel"></strong></div>
+            <button class="button quiet" id="copyBtn" hidden>지난주 일정 가져오기</button>
+          </div>
+          <div class="control-row export-row">
+            <div class="filter-options"><label id="gunsuFilter"><input id="gunsuOnly" type="checkbox" checked> 군수님 참석만</label><label id="weekendFilter" hidden><input id="weekendPair" type="checkbox" checked> 토·일 한 장에 묶기</label><label><input id="includeAnnotation" type="checkbox"> 출력 주석 포함</label><label><input id="includeNotes" type="checkbox"> 상세 업무자료 첨부</label><span class="subtle" id="noteHint">기본 문서에는 내부 메모가 빠집니다.</span></div>
+            <div class="export-actions"><button class="button secondary" id="printBtn">인쇄 / PDF</button><button class="button secondary" id="hwpxBtn">HWPX 저장</button><button class="button primary" id="hwpBtn" title="설치된 한글 프로그램으로 실제 .hwp 문서를 저장합니다">한글 저장 (.hwp)</button></div>
+          </div>
+        </section>
+        <section class="quick-card no-print"><label for="quickInput"><strong>빠른 입력</strong><span>날짜 · 시간 · 행사명을 입력한 뒤 내용을 확인하세요.</span></label><div><input id="quickInput" placeholder="예: 10/15 14:00 지역 현안 간담회" maxlength="700"><button class="button secondary" id="quickBtn">내용 확인</button></div></section>
+        <div class="document-info no-print"><span id="documentCount">등록된 일정을 확인하세요.</span><span>일정을 누르면 내용과 업무 메모를 수정할 수 있습니다.</span><label class="preview-fit"><input id="fitPaper" type="checkbox" checked> 용지 전체 보기</label></div>
+        <section id="listControls" class="list-controls no-print" hidden><input id="searchInput" placeholder="행사명, 장소, 부서, 메모 검색" aria-label="전체 일정 검색"><select id="listStatus" aria-label="상태 필터"><option value="all">모든 상태</option><option value="confirmed">확정</option><option value="tentative">미확정</option><option value="cancelled">취소</option></select><button class="button secondary" id="csvBtn">목록 저장 (CSV)</button></section>
+        <div id="documentHint" class="context-hint no-print" role="status" hidden><p id="documentHintText"></p><div><button id="hintNewBtn" class="button primary">첫 일정 입력하기</button><button id="hintFindBtn" class="button secondary">전체 일정 찾기</button></div></div>
+        <div id="documentStage" aria-label="일정표 미리보기" tabindex="0"></div>
+        <div id="listPagination" class="pagination no-print" hidden></div>
+        <section class="output-card no-print"><div class="folder-icon" aria-hidden="true">▱</div><div><strong>문서는 바탕화면에서 찾으세요.</strong><span id="outputPath">군수실_일정_출력문서 → 일일일정 / 주간일정 / 월간일정</span></div><button class="button secondary" id="folderBtn">저장 폴더 열기</button></section>
+        <div id="lastOutput" class="last-output no-print" role="status" hidden><span id="lastOutputText"></span><button class="button quiet" id="lastOutputBtn">저장한 파일 보기</button></div>
+      </main>
     </div>
   </div>
-
-  <!-- ===================================================
-       2단: 스마트 빠른 입력 바
-       =================================================== -->
-  <div class="quick-input-bar no-print">
-    <div class="quick-input-inner">
-      <span class="quick-badge">⚡ 한 줄 빠른 등록</span>
-      <input type="text" id="quickInputText" class="quick-input-box" placeholder="예: 7/15 14:00 보은읍 순방 소회의실 행정운영과 (한 줄만 치고 엔터 누르면 즉시 등록!)">
-      <button class="btn btn-success btn-sm" id="btnQuickSubmit">등록 (Enter)</button>
-    </div>
-  </div>
-
-  <!-- ===================================================
-       3단: 문서 조작 & 출력 툴바
-       =================================================== -->
-  <div class="doc-action-bar no-print">
-    <div class="doc-action-inner" id="controlBarArea"></div>
-  </div>
-
-  <!-- ===================================================
-       4단: 메인 A4 프리뷰 스테이지
-       =================================================== -->
-  <main class="main-stage">
-    <div id="mainStageArea"></div>
-  </main>
-
-  <!-- ===================================================
-       모달: 새 일정 등록 / 수정 (대형 컬러 팔레트 탑재)
-       =================================================== -->
-  <div id="eventModal" class="modal-overlay">
-    <div class="modal-box">
-      <div class="modal-header">
-        <h3 id="modalTitle">새 일정 등록</h3>
-        <button type="button" class="btn-close" id="btnModalClose">&times;</button>
+  <dialog id="eventDialog" class="event-dialog" aria-labelledby="eventDialogTitle">
+    <form id="eventForm">
+      <div class="dialog-header"><div><div class="eyebrow">일정 · 참석자 · 준비사항</div><h2 id="eventDialogTitle">새 일정 등록</h2></div><button type="button" class="icon-button" data-close aria-label="등록창 닫기">×</button></div>
+      <div class="dialog-body">
+        <div id="eventError" class="form-error" role="alert" hidden></div>
+        <div class="form-grid three"><label>일자 <span class="required">필수</span><input name="date" type="date" required></label><label>시작 시간 <span class="required">필수</span><input name="time" type="time" required></label><label>종료 시간<input name="endTime" type="time"></label></div>
+        <label>행사명 <span class="required">필수</span><input name="title" maxlength="500" required placeholder="예: 지역 현안 간담회"></label>
+        <div class="form-grid"><label>장소<input name="place" maxlength="300" list="places" placeholder="예: 군청 소회의실"></label><label>주관 / 관련부서<input name="dept" maxlength="200" list="departments" placeholder="예: 행정운영과"></label></div>
+        <div class="form-grid three"><label>참석 구분<select name="attendee"><option value="gunsu">군수님 참석</option><option value="v_gunsu">부군수님 참석</option><option value="general">일반 / 부서 행사</option></select></label><label>중요도<select name="priority"><option value="normal">일반</option><option value="important">중요</option></select></label><label>진행 상태<select name="status"><option value="confirmed">확정</option><option value="tentative">미확정</option><option value="cancelled">취소</option></select></label></div>
+        <div class="memo-heading"><h3>출력 주석</h3><span>‘출력 주석 포함’을 선택하면 행사 아래에 표시됩니다. 내부 연락처 등은 아래 업무 메모에 적어 주세요.</span></div>
+        <label>일정표에 넣을 안내<textarea name="annotation" maxlength="600" rows="2" placeholder="예: 주민 대표 3명 참석 / 군수님 인사말 3분 / 13:40 사전 점검"></textarea></label>
+        <div class="memo-heading"><h3>상세 업무 메모</h3><span>기본 공문서에는 포함되지 않습니다. ‘상세 업무자료 첨부’를 선택하면 별도 참고자료 페이지에 표시됩니다.</span></div>
+        <div class="form-grid"><label>참석 예정자 / 주요 내빈<textarea name="participants" maxlength="2000" rows="2" placeholder="예: 주민 대표 3명, 관련 부서장 참석"></textarea></label><label>담당자 / 연락사항<input name="contact" maxlength="300" placeholder="예: 행정운영과 담당자, 내선 1234"></label></div>
+        <label>진행 · 준비사항<textarea name="preparation" maxlength="3000" rows="3" placeholder="예: 군수님 인사말 3분, 자료 10부 준비, 13:40 사전 점검"></textarea></label>
+        <label>추가 업무 메모<textarea name="notes" maxlength="6000" rows="3" placeholder="예: 행사 전 방문객 안내가 필요합니다. 변경 내용이나 전달사항을 남겨 주세요."></textarea></label>
+        <div class="checklist-header"><strong>준비 확인 목록</strong><button type="button" class="button quiet" id="addCheckBtn">＋ 확인 사항</button></div><div id="checklistEditor"></div>
+        <div class="subtle">취소된 일정은 보관되며, 일반 일정표와 한글 문서에는 출력되지 않습니다.</div>
       </div>
-      <form id="eventForm">
-        <div class="modal-body">
-          <div class="form-row">
-            <div class="form-group">
-              <label for="inputEventDate">📅 일자 *</label>
-              <input type="date" id="inputEventDate" class="control-input" required>
-            </div>
-            <div class="form-group">
-              <label for="inputEventTime">⏰ 시간 *</label>
-              <input type="time" id="inputEventTime" class="control-input" required value="10:00">
-              <div class="chip-group">
-                <span class="chip" data-target="inputEventTime" data-val="08:30">08:30</span>
-                <span class="chip" data-target="inputEventTime" data-val="09:00">09:00</span>
-                <span class="chip" data-target="inputEventTime" data-val="10:00">10:00</span>
-                <span class="chip" data-target="inputEventTime" data-val="11:00">11:00</span>
-                <span class="chip" data-target="inputEventTime" data-val="14:00">14:00</span>
-                <span class="chip" data-target="inputEventTime" data-val="16:00">16:00</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label for="inputEventTitle">📌 행사/일정명 *</label>
-            <input type="text" id="inputEventTitle" class="control-input" placeholder="예: 보은군 부군수 취임식" required>
-          </div>
-
-          <div class="form-group">
-            <label for="inputEventPlace">📍 장소</label>
-            <input type="text" id="inputEventPlace" class="control-input" placeholder="예: 군청소회의실, 도지사실">
-            <div class="chip-group">
-              <span class="chip" data-target="inputEventPlace" data-val="집무실">집무실</span>
-              <span class="chip" data-target="inputEventPlace" data-val="군수님실">군수님실</span>
-              <span class="chip" data-target="inputEventPlace" data-val="소회의실">소회의실</span>
-              <span class="chip" data-target="inputEventPlace" data-val="대회의실">대회의실</span>
-              <span class="chip" data-target="inputEventPlace" data-val="그랜드컨벤션">그랜드컨벤션</span>
-              <span class="chip" data-target="inputEventPlace" data-val="전통시장일원">전통시장</span>
-              <span class="chip" data-target="inputEventPlace" data-val="문화예술회관">문화예술회관</span>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label for="inputEventDept">🏢 주관 / 관련부서</label>
-            <input type="text" id="inputEventDept" class="control-input" placeholder="예: 행정운영과, 보건소">
-            <div class="chip-group">
-              <span class="chip" data-target="inputEventDept" data-val="행정운영과">행정운영과</span>
-              <span class="chip" data-target="inputEventDept" data-val="주민행복과">주민행복과</span>
-              <span class="chip" data-target="inputEventDept" data-val="문화관광과">문화관광과</span>
-              <span class="chip" data-target="inputEventDept" data-val="보건소">보건소</span>
-              <span class="chip" data-target="inputEventDept" data-val="농업기술센터">농업기술센터</span>
-              <span class="chip" data-target="inputEventDept" data-val="재난안전과">재난안전과</span>
-              <span class="chip" data-target="inputEventDept" data-val="미래전략과">미래전략과</span>
-              <span class="chip" data-target="inputEventDept" data-val="기획감사실">기획감사실</span>
-            </div>
-          </div>
-
-          <!-- 🎨 글씨 색상 선택 팔레트 -->
-          <div class="color-picker-section">
-            <div class="color-picker-title">
-              <span>🎨 글씨 색상 선택 (표에 어떤 색으로 넣을까요?)</span>
-            </div>
-            <input type="hidden" id="inputAttendeeVal" value="gunsu">
-            <div class="color-palette-grid">
-              <div class="color-chip-btn chip-green selected" data-val="gunsu">
-                <div class="color-chip-circle" style="background: #008000;"></div>
-                <div class="color-chip-name">🟢 초록색</div>
-                <div class="color-chip-desc">군수님 참석<br>(일일일정표 자동등재)</div>
-              </div>
-
-              <div class="color-chip-btn chip-blue" data-val="v_gunsu">
-                <div class="color-chip-circle" style="background: #0000ff;"></div>
-                <div class="color-chip-name">🔵 파란색</div>
-                <div class="color-chip-desc">부군수님 참석<br>(주간 파란색 글씨)</div>
-              </div>
-
-              <div class="color-chip-btn chip-black" data-val="general">
-                <div class="color-chip-circle" style="background: #0f172a;"></div>
-                <div class="color-chip-name">⚫ 검정색</div>
-                <div class="color-chip-desc">일반 / 부서 행사<br>(기본 글씨)</div>
-              </div>
-
-              <div class="color-chip-btn chip-red" data-val="important">
-                <div class="color-chip-circle" style="background: #cc0000;"></div>
-                <div class="color-chip-name">🔴 빨간색</div>
-                <div class="color-chip-desc">중요 / 특별 행사<br>(강조 글씨)</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline" id="btnModalCancel">취소</button>
-          <button type="submit" class="btn btn-primary" style="font-size: 15px; padding: 10px 24px;">저장하기</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- 모달: 휴지통 -->
-  <div id="trashModal" class="modal-overlay">
-    <div class="modal-box" style="max-width: 720px;">
-      <div class="modal-header">
-        <h3>🗑️ 삭제된 일정 휴지통</h3>
-        <button type="button" class="btn-close" id="btnTrashClose">&times;</button>
-      </div>
-      <div class="modal-body" style="max-height: 60vh;">
-        <div id="trashListArea"></div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-outline" id="btnEmptyTrash" style="color: var(--danger);">휴지통 비우기</button>
-        <button type="button" class="btn btn-primary" id="btnTrashDone">닫기</button>
-      </div>
-    </div>
-  </div>
-
-  <script src="initial_data.js"></script>
-  <script src="app.js"></script>
+      <div class="dialog-footer"><button type="button" class="button danger" id="deleteBtn" hidden>휴지통으로 이동</button><span class="spacer"></span><button type="button" class="button secondary" data-close>취소</button><button class="button primary" type="submit" id="saveEventBtn">저장하기</button></div>
+    </form>
+  </dialog>
+  <dialog id="utilityDialog" aria-labelledby="utilityTitle"><div class="dialog-header"><h2 id="utilityTitle"></h2><button class="icon-button" data-close aria-label="창 닫기">×</button></div><div id="utilityBody" class="dialog-body"></div><div class="dialog-footer"><button class="button secondary" data-close>닫기</button></div></dialog>
+  <dialog id="confirmDialog" class="confirm-dialog" aria-labelledby="confirmTitle"><div class="dialog-header"><h2 id="confirmTitle">확인</h2></div><div class="dialog-body"><p id="confirmMessage"></p></div><div class="dialog-footer"><button class="button secondary" id="confirmNo">취소</button><button class="button primary" id="confirmYes">계속</button></div></dialog>
+  <div id="toast" class="toast no-print" role="status" aria-live="polite" hidden></div>
+  <input type="file" id="restoreFile" accept=".json,application/json" hidden>
+  <datalist id="places"><option>집무실</option><option>군청 소회의실</option><option>군청 대회의실</option><option>문화예술회관</option></datalist>
+  <datalist id="departments"><option>행정운영과</option><option>주민행복과</option><option>문화관광과</option><option>보건소</option><option>농업기술센터</option></datalist>
+  <script src="schedule-core.js"></script><script src="app.js"></script>
 </body>
 </html>

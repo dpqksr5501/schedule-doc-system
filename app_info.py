@@ -1,0 +1,6 @@
+"""Release identity shared by packaging, UI and the update service."""
+VERSION = "2.1.0"
+APP_NAME = "군수실 일정 관리"
+ASSET_NAME = "GunsuSchedule.exe"
+REPO_OWNER = "dpqksr5501"
+REPO_NAME = "schedule-doc-system"
