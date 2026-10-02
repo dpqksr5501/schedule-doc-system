@@ -5,7 +5,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 import uuid
 import zipfile
 from app_info import VERSION, ASSET_NAME
@@ -31,11 +30,19 @@ def main():
     args.append(str(ROOT / 'main.py'))
     subprocess.run(args, cwd=ROOT, check=True)
     executable = ROOT / 'dist' / ASSET_NAME
-    with tempfile.TemporaryDirectory(prefix='schedule-bundle-test-') as directory:
-        subprocess.run([str(executable), '--smoke-test', directory], timeout=90, check=True)
-        result = json.loads((Path(directory) / 'smoke-result.json').read_text('utf-8'))
+    # 실패 후에도 검사 진행 위치와 오류를 수집할 수 있도록 기록을 보존합니다.
+    directory = ROOT / 'build' / ('bundle-probe-' + uuid.uuid4().hex[:12])
+    directory.mkdir(parents=True)
+    try:
+        subprocess.run([str(executable), '--smoke-test', str(directory)], timeout=90, check=True)
+        result = json.loads((directory / 'smoke-result.json').read_text('utf-8'))
         if result.get('success') is not True:
             raise RuntimeError('실행 파일 자체 점검 실패')
+    finally:
+        for name in ('smoke-progress.json', 'smoke-result.json'):
+            report = directory / name
+            if report.exists():
+                print(report.read_text('utf-8'), flush=True)
     destination = ROOT / 'release'
     destination.mkdir(exist_ok=True)
     digest = hashlib.sha256(executable.read_bytes()).hexdigest()

@@ -356,6 +356,8 @@ def main():
                       storage_path=str(paths.data / 'webview'))
     except Exception:
         logging.exception('Application startup failed')
+        if ui_smoke:
+            raise
         _notify('프로그램을 시작하지 못했습니다. Microsoft Edge WebView2 설치와 폴더 권한을 확인해 주세요.\n'
                 '오류 기록: ' + str(paths.data / 'application.log'))
     finally:
@@ -366,4 +368,14 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as error:
+        if len(sys.argv) == 3 and sys.argv[1] in ('--smoke-test', '--ui-smoke-test'):
+            # 검사 중에는 대화상자가 CI를 멈추지 않도록 오류를 파일로 남깁니다.
+            import traceback
+            root = Path(sys.argv[2])
+            root.mkdir(parents=True, exist_ok=True)
+            name = 'ui-smoke-result.json' if sys.argv[1] == '--ui-smoke-test' else 'smoke-result.json'
+            atomic_bytes(root / name, json.dumps(
+                {'success': False, 'error': str(error), 'traceback': traceback.format_exc()},
+                ensure_ascii=False).encode('utf-8'))
+            raise SystemExit(1)
         _notify('프로그램 준비 중 오류가 발생했습니다. 사용자 폴더의 접근 권한을 확인해 주세요.\n' + str(error))

@@ -36,6 +36,15 @@ jobs:
           $report = Get-Content -LiteralPath (Join-Path $probe 'ui-smoke-result.json') -Raw | ConvertFrom-Json
           if (-not $report.success) { throw 'WebView2 브릿지 점검 실패' }
       - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: GunsuSchedule-검사기록
+          path: |
+            build/bundle-probe-*/smoke-*.json
+            ${{ runner.temp }}/gunsu-ui-probe/ui-smoke-result.json
+            ${{ runner.temp }}/gunsu-ui-probe/data/application.log
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
         with:
           name: GunsuSchedule-Windows
           path: |
