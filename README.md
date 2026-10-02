@@ -1,4 +1,4 @@
-# 군수실 일정 관리 v2.1.1
+# 군수실 일정 관리 v2.1.2
 
 일정을 한 번 입력해 일일·주간·월간 일정표를 만들고, 참석 예정자와 준비사항을 함께 관리하는 Windows 데스크톱 프로그램입니다. 외부 서버로 일정을 보내지 않습니다. 인터넷 연결은 사용자가 업데이트 확인·적용을 선택할 때 필요합니다.
 
@@ -69,17 +69,17 @@ py -3.12 -m venv .venv-build
 .\.venv-build\Scripts\python.exe -X utf8 build_release.py
 ```
 
-`run_tests.py`는 임시 폴더만 사용합니다. 실제 APPDATA, 바탕화면, 한글 프로그램을 변경하거나 네트워크에 연결하지 않습니다. 빌드는 테스트 실패 시 중단하고, 완성 EXE를 별도 임시 폴더에서 실행해 저장·재시작·3종 문서 생성을 검증합니다. `dist/GunsuSchedule.exe`, `release/GunsuSchedule-v2.1.1-Windows.zip`, SHA256 및 manifest가 생성됩니다. 역사적 일회성 스크립트는 `tools/legacy/`에 보관했습니다.
+`run_tests.py`는 임시 폴더만 사용합니다. 실제 APPDATA, 바탕화면, 한글 프로그램을 변경하거나 네트워크에 연결하지 않습니다. 빌드는 테스트 실패 시 중단하고, 완성 EXE를 별도 임시 폴더에서 실행해 저장·재시작·3종 문서 생성을 검증합니다. `dist/GunsuSchedule.exe`, `release/GunsuSchedule-v2.1.2-Windows.zip`, SHA256 및 manifest가 생성됩니다. 역사적 일회성 스크립트는 `tools/legacy/`에 보관했습니다.
 
 브라우저 미리보기는 `python -X utf8 tools/preview_server.py`로 실행하고 `http://127.0.0.1:8765/index.html?preview=1`을 엽니다. 이 개발 전용 서버는 화면 리소스만 제공하고 Python 공통 양식으로 가상 일정을 렌더링합니다. 이 모드는 가상 일정과 메모리 저장만 사용합니다. 일반 브라우저로 HTML만 열어 실제 일정이 저장되는 것처럼 표시하지 않습니다.
 
 ## GitHub 배포와 업데이트
 
-개발자용 상세 순서는 [배포·업데이트 안내](배포_업데이트_안내.txt)에 있습니다. 현재 버전의 사용자용 릴리즈 설명은 [v2.1.1 설명](docs/releases/v2.1.1.txt)이며, 빌드가 `release/RELEASE_NOTES.txt`로 준비해 초안 본문에 넣습니다.
+개발자용 상세 순서는 [배포·업데이트 안내](배포_업데이트_안내.txt)에 있습니다. 현재 버전의 사용자용 릴리즈 설명은 [v2.1.2 설명](docs/releases/v2.1.2.txt)이며, 빌드가 `release/RELEASE_NOTES.txt`로 준비해 초안 본문에 넣습니다.
 
-Windows GitHub Actions에서 고정 의존성 설치, 테스트, EXE 생성, WebView2 연결 검증, 배포 artifact 보관을 수행합니다. 코드 버전과 같은 `v2.1.1` 태그를 올리면 **초안 Release**를 준비합니다. 관리자가 artifact와 설명을 검토하고 정식 공개해야 앱에서 업데이트로 보입니다. EXE asset 이름은 항상 `GunsuSchedule.exe`입니다.
+Windows GitHub Actions에서 고정 의존성 설치, 테스트, EXE 생성, WebView2 연결 검증, 배포 artifact 보관을 수행합니다. 코드 버전과 같은 `v2.1.2` 태그를 올리면 **초안 Release**를 준비합니다. 관리자가 artifact와 설명을 검토하고 정식 공개해야 앱에서 업데이트로 보입니다. EXE asset 이름은 항상 `GunsuSchedule.exe`입니다.
 
-일반 사용자에게는 `GunsuSchedule-v2.1.1-Windows.zip`을 안내합니다. 앱 내 갱신을 위해서는 `GunsuSchedule.exe`를 별도 Release asset으로도 첨부해야 합니다. 원본 소스와 버전 태그를 먼저 반영하고, `app_info.py`의 `VERSION`과 태그를 일치시킵니다. 이후 수정은 새 버전 번호로 배포하며 공개된 같은 버전의 실행 파일을 바꾸지 않습니다.
+일반 사용자에게는 `GunsuSchedule-v2.1.2-Windows.zip`을 안내합니다. 앱 내 갱신을 위해서는 `GunsuSchedule.exe`를 별도 Release asset으로도 첨부해야 합니다. 원본 소스와 버전 태그를 먼저 반영하고, `app_info.py`의 `VERSION`과 태그를 일치시킵니다. 이후 수정은 새 버전 번호로 배포하며 공개된 같은 버전의 실행 파일을 바꾸지 않습니다.
 
 업데이트는 정식 세 자리 SemVer만 적용하며 prerelease는 제외합니다. GitHub API asset digest가 없거나 파일 크기·해시·출처가 다르면 실행하지 않습니다. 새 버전을 별도 폴더에 두고 기존 EXE는 보존합니다. 새 화면과 데이터가 준비되고 바로가기 저장에 성공한 뒤 활성 버전을 바꿉니다. 새 프로세스가 종료되면 이전 버전 재실행을 시도하고, 시작 확인이 지연되면 실패 안내를 남깁니다. 이전 데이터 스키마를 덮어쓰는 자동 다운그레이드는 하지 않습니다.
 

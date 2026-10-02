@@ -22,7 +22,7 @@ def main():
             '--workpath', str(work), '--specpath', str(ROOT / 'build'),
             '--noupx', '--name', ASSET_NAME[:-4], '--icon', str(ROOT / 'assets' / 'app_icon.ico'),
             '--hidden-import', 'win32com.client', '--hidden-import', 'win32com.shell.shell',
-            '--hidden-import', 'pythoncom']
+            '--hidden-import', 'win32timezone', '--hidden-import', 'pythoncom']
     for name in ['index.html', 'style.css', 'document.css', 'app.js', 'schedule-core.js', '사용설명서.txt', '처음사용_5분안내.html',
                  'assets/template.hwpx', 'assets/manual.html', 'assets/app_icon.ico',
                  'assets/boeun-symbol.png', 'assets/boeun-slogan.png']:
