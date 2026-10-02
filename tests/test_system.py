@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import os
+import sys
 from pathlib import Path
 import subprocess
 import tempfile
@@ -20,6 +21,7 @@ from storage import SnapshotStore, atomic_bytes, atomic_copy, encode
 from document_engine import HP, document_model, generate_document, validate_grid
 from main import DesktopApi
 import updater
+import installation
 import hwpx_generator
 import native_workers
 from hwp_validation import validate_hwp
@@ -447,6 +449,32 @@ class UpdateTests(unittest.TestCase):
                         updater._download(item, target)
                         self.assertEqual(target.read_bytes(), payload)
             self.assertFalse(target.with_suffix('.download').exists())
+
+
+@unittest.skipUnless(os.name == 'nt', 'Windows Unicode shortcut integration')
+class InstallationTests(unittest.TestCase):
+    def test_unicode_shortcut_is_readable_and_preserves_previous_on_failure(self):
+        import pythoncom
+        with tempfile.TemporaryDirectory() as directory:
+            paths = AppPaths.isolated(Path(directory) / '한글 경로')
+            paths.ensure_output()
+            executable = paths.installation / 'versions' / '테스트 버전' / '일정 관리.exe'
+            atomic_copy(sys.executable, executable)
+            installation.activate(paths, executable)
+            shortcut = paths.desktop / '군수실 일정 관리.lnk'
+            pythoncom.CoInitialize()
+            try:
+                self.assertTrue(installation.shortcut_target(shortcut).samefile(executable))
+            finally:
+                pythoncom.CoUninitialize()
+            active = paths.installation / 'active.json'
+            original_record, original_link = active.read_bytes(), shortcut.read_bytes()
+            with patch('installation.shortcut_target', side_effect=OSError('invalid link')):
+                with self.assertRaises(OSError):
+                    installation.activate(paths, executable)
+            self.assertEqual(active.read_bytes(), original_record)
+            self.assertEqual(shortcut.read_bytes(), original_link)
+            self.assertFalse(list(paths.desktop.glob('.GunsuSchedule-*.lnk')))
 
 
 class ComTests(unittest.TestCase):

@@ -47,14 +47,12 @@ def run(root):
     if installed:
         progress('바탕화면 바로가기 생성')
         installation.activate(paths, installed)
-        import win32com.client
         import pythoncom
         pythoncom.CoInitialize()
         try:
             progress('바로가기 대상 실행 파일 확인')
             shortcut = paths.desktop / '군수실 일정 관리.lnk'
-            shell = win32com.client.Dispatch('WScript.Shell')
-            target = Path(shell.CreateShortcut(str(shortcut)).TargetPath)
+            target = installation.shortcut_target(shortcut)
             if not target.samefile(installed):
                 diagnostic = {'actual': str(target), 'expected': str(installed),
                               'actualResolved': str(target.resolve()), 'expectedResolved': str(installed.resolve()),
