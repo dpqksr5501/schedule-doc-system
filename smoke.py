@@ -54,8 +54,12 @@ def run(root):
             progress('바로가기 대상 실행 파일 확인')
             shortcut = paths.desktop / '군수실 일정 관리.lnk'
             shell = win32com.client.Dispatch('WScript.Shell')
-            if not Path(shell.CreateShortcut(str(shortcut)).TargetPath).samefile(installed):
-                raise RuntimeError('바탕화면 바로가기 점검 실패')
+            target = Path(shell.CreateShortcut(str(shortcut)).TargetPath)
+            if not target.samefile(installed):
+                diagnostic = {'actual': str(target), 'expected': str(installed),
+                              'actualResolved': str(target.resolve()), 'expectedResolved': str(installed.resolve()),
+                              'actualStat': list(target.stat()), 'expectedStat': list(installed.stat())}
+                raise RuntimeError('바탕화면 바로가기 점검 실패: ' + json.dumps(diagnostic, ensure_ascii=False))
             report['shortcut'] = str(shortcut)
             report['installed'] = str(installed)
         finally:
