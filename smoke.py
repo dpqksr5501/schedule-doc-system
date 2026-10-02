@@ -45,7 +45,7 @@ def run(root):
         try:
             shortcut = paths.desktop / '군수실 일정 관리.lnk'
             shell = win32com.client.Dispatch('WScript.Shell')
-            if Path(shell.CreateShortcut(str(shortcut)).TargetPath) != installed:
+            if not Path(shell.CreateShortcut(str(shortcut)).TargetPath).samefile(installed):
                 raise RuntimeError('바탕화면 바로가기 점검 실패')
             report['shortcut'] = str(shortcut)
             report['installed'] = str(installed)

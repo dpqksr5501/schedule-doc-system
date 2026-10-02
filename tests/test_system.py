@@ -408,7 +408,7 @@ class UpdateTests(unittest.TestCase):
             process.poll.return_value = 1
             with patch('updater.sys.executable', str(previous)), patch('updater.subprocess.Popen', return_value=process) as popen:
                 self.assertEqual(updater.monitor_update(paths, token), 1)
-            self.assertEqual(Path(popen.call_args_list[-1].args[0][0]), previous)
+            self.assertTrue(Path(popen.call_args_list[-1].args[0][0]).samefile(previous))
             self.assertTrue((paths.updates / 'last_failure.txt').exists())
     def test_versions(self):
         for newer, older, expected in [('v2.10.0','2.9.9',True), ('2.0.0+build.2','2.0.0',False),
