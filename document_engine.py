@@ -9,6 +9,8 @@ import xml.etree.ElementTree as ET
 from app_paths import resource_dir
 from schedule_domain import text, today, timestamp, valid_date
 from document_layout import build_plan, wrap
+from branding import ARTWORK, artwork_path
+from storage import atomic_replace
 
 NS_HP = 'http://www.hancom.co.kr/hwpml/2011/paragraph'
 NS_HC = 'http://www.hancom.co.kr/hwpml/2011/core'
@@ -169,8 +171,18 @@ class _Styles:
         return self.cache[key]
 
 
-def _fit_picture(source, width, height, identifier):
+def _fit_picture(source, width, height, identifier, name):
     picture = copy.deepcopy(source)
+    artwork = ARTWORK[name]
+    original_width, original_height = (dimension * 75 for dimension in artwork['pixels'])
+    picture.find(HP + 'orgSz').attrib.update(width=str(original_width), height=str(original_height))
+    for index, (x, y) in enumerate(((0, 0), (original_width, 0),
+                                   (original_width, original_height), (0, original_height))):
+        picture.find(HP + 'imgRect').find('{' + NS_HC + '}pt' + str(index)).attrib.update(x=str(x), y=str(y))
+    picture.find(HP + 'imgClip').attrib.update(left='0', top='0', right=str(original_width), bottom=str(original_height))
+    picture.find(HP + 'imgDim').attrib.update(dimwidth=str(original_width), dimheight=str(original_height))
+    picture.find('{' + NS_HC + '}img').set('binaryItemIDRef', 'boeun-' + name)
+    picture.find(HP + 'shapeComment').text = artwork['alt'] + '\n' + artwork['file']
     picture.attrib.update(id=str(identifier), instid=str(identifier), zOrder='0')
     picture.find(HP + 'offset').attrib.update(x='0', y='0')
     picture.find(HP + 'curSz').attrib.update(width=str(width), height=str(height))
@@ -196,12 +208,25 @@ def generate_document(model, output_path):
     prototypes = original.findall(HP + 'tr')[3].findall(HP + 'tc')
     if [int(c.find(HP + 'cellSz').get('width')) for c in prototypes] != WIDTHS:
         raise ValueError('한글 양식의 열 너비가 변경되었습니다.')
-    pictures = {}
-    for pic in original.iter(HP + 'pic'):
-        ref = pic.find('{' + NS_HC + '}img').get('binaryItemIDRef')
-        pictures.setdefault('symbol' if ref == 'image1' else 'slogan', pic)
+    picture_prototype = next(original.iter(HP + 'pic'))
     plan = build_plan(model)
     pages = plan['pages']
+    used_artwork = {c['picture'] for p in pages for r in p['rows'] for c in r['cells'] if c['picture']}
+    # Embed the exact same source bytes displayed by the preview. Old template
+    # bitmaps are removed together with their package references.
+    opf = '{http://www.idpf.org/2007/opf/}'
+    package = ET.fromstring(parts['Contents/content.hpf'])
+    manifest = package.find(opf + 'manifest')
+    for item in list(manifest):
+        if item.get('id') in ('image1', 'image2'):
+            parts.pop(item.get('href'), None)
+            manifest.remove(item)
+    for name in sorted(used_artwork):
+        filename = 'BinData/' + ARTWORK[name]['file']
+        parts[filename] = artwork_path(name).read_bytes()
+        ET.SubElement(manifest, opf + 'item', id='boeun-' + name, href=filename,
+                      **{'media-type': 'image/jpeg', 'isEmbeded': '1'})
+    parts['Contents/content.hpf'] = ET.tostring(package, encoding='utf-8', xml_declaration=True)
     styles = _Styles(header)
     parent = next(p for p in list(section) if p.find('.//' + HP + 'tbl') is not None)
     first_run = copy.deepcopy(parent.findall(HP + 'run')[0])
@@ -244,12 +269,10 @@ def generate_document(model, output_path):
                         set_text(item, segment['text'], styles.char({**spec, **segment}))
                         serial += 1
                 if spec['picture']:
-                    # Reuse the template's original binary image without redrawing its logo.
-                    symbol = spec['picture'] == 'symbol'
-                    width = min(spec['width'] - 700, 5600 if symbol else 14500)
-                    height = min(data_row['height'] - 600, round(width * (749 / 777 if symbol else 1157 / 3392)))
+                    image = spec['image']
                     run = paragraph.find(HP + 'run')
-                    run.insert(0, _fit_picture(pictures[spec['picture']], width, height, 2000000000 + serial))
+                    run.insert(0, _fit_picture(picture_prototype, image['width'], image['height'],
+                                             2000000000 + serial, spec['picture']))
                     serial += 1
                 target_row.append(value)
         validate_grid(table)
@@ -302,7 +325,7 @@ def generate_document(model, output_path):
                 raise ValueError('한글 파일의 압축 검증이 실패했습니다.')
         with open(staged, 'r+b') as stream:
             os.fsync(stream.fileno())
-        os.replace(staged, output)
+        atomic_replace(staged, output)
     finally:
         if os.path.exists(staged):
             os.unlink(staged)

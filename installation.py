@@ -2,27 +2,79 @@
 from pathlib import Path
 import hashlib
 import json
+import logging
 import os
+import re
 import sys
 import uuid
-from app_info import ASSET_NAME, VERSION
-from storage import atomic_bytes, atomic_copy
+from app_info import ASSET_NAME, INSTALLED_EXE_NAME, VERSION
+from storage import atomic_bytes, atomic_copy, atomic_replace
 
 
 def executable_for(paths, version=VERSION):
-    return paths.installation / 'versions' / version / ASSET_NAME
+    return paths.installation / 'versions' / version / INSTALLED_EXE_NAME
+
+
+def _version(value):
+    if not isinstance(value, str) or not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', value):
+        raise ValueError('설치 버전 정보가 올바르지 않습니다.')
+    return tuple(map(int, value.split('.')))
+
+
+def _digest(path):
+    with Path(path).open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def active_installation(paths):
+    """Accept only our own version directory, including legacy English names."""
+    active = paths.installation / 'active.json'
+    if not active.exists():
+        return None
+    try:
+        if active.stat().st_size > 8192:
+            raise ValueError('설치 정보가 너무 큽니다.')
+        record = json.loads(active.read_text('utf-8'))
+        version = record['version']
+        _version(version)
+        target = Path(record['executable']).resolve()
+        root = (paths.installation / 'versions').resolve()
+        allowed = [(root / version / name).resolve() for name in (INSTALLED_EXE_NAME, ASSET_NAME)]
+        if not target.is_relative_to(root) or target not in allowed or not target.is_file():
+            raise ValueError('설치 경로가 올바르지 않습니다.')
+        with target.open('rb') as stream:
+            if stream.read(2) != b'MZ':
+                raise ValueError('설치된 실행 파일을 확인하지 못했습니다.')
+        if record.get('sha256') and record['sha256'] != _digest(target):
+            raise ValueError('설치된 실행 파일이 변경되었습니다.')
+        return version, target
+    except (OSError, ValueError, KeyError, TypeError):
+        logging.warning('Active installation record could not be validated', exc_info=True)
+        return None
 
 
 def prepare_installation(paths):
     if not getattr(sys, 'frozen', False):
         return None
+    active = active_installation(paths)
+    if active and _version(active[0]) > _version(VERSION):
+        return active[1]
     source, destination = Path(sys.executable).resolve(), executable_for(paths)
     if source != destination.resolve():
-        def digest(path):
-            with path.open('rb') as stream:
-                return hashlib.file_digest(stream, 'sha256').digest()
-        if not destination.exists() or digest(destination) != digest(source):
-            atomic_copy(source, destination)
+        with source.open('rb') as stream:
+            if stream.read(2) != b'MZ':
+                raise ValueError('설치할 실행 파일 형식이 올바르지 않습니다.')
+        digest = _digest(source)
+        if not destination.exists() or _digest(destination) != digest:
+            # Verify a separate candidate before replacing any installed file.
+            staged = destination.with_name('.install-' + uuid.uuid4().hex + '.exe')
+            try:
+                atomic_copy(source, staged)
+                if _digest(staged) != digest:
+                    raise OSError('프로그램 복사 결과가 원본과 다릅니다. 기존 버전을 유지합니다.')
+                atomic_replace(staged, destination)
+            finally:
+                staged.unlink(missing_ok=True)
     return destination
 
 
@@ -30,9 +82,13 @@ def activate(paths, executable=None):
     executable = Path(executable or executable_for(paths))
     if not executable.is_file():
         raise OSError('실행 파일을 찾지 못했습니다.')
+    current = active_installation(paths)
+    if current and _version(current[0]) > _version(VERSION):
+        raise ValueError('더 최신 버전이 설치되어 있어 기존 바로가기를 유지합니다.')
     active = paths.installation / 'active.json'
     previous = active.read_bytes() if active.exists() else None
-    record = json.dumps({'version': VERSION, 'executable': str(executable)}, ensure_ascii=False).encode('utf-8')
+    record = json.dumps({'version': VERSION, 'executable': str(executable), 'sha256': _digest(executable)},
+                        ensure_ascii=False).encode('utf-8')
     # Stage the link first. Never let a partial COM Save replace the live shortcut.
     staged = paths.desktop / ('.GunsuSchedule-' + uuid.uuid4().hex + '.lnk')
     if os.name == 'nt':

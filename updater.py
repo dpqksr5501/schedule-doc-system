@@ -12,8 +12,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from app_info import VERSION, ASSET_NAME, REPO_OWNER, REPO_NAME
-from storage import atomic_bytes
+from app_info import VERSION, ASSET_NAME, PUBLIC_EXE_NAME, INSTALLED_EXE_NAME, REPO_OWNER, REPO_NAME
+from storage import atomic_bytes, atomic_replace
 from native_workers import self_command, independent_environment
 
 CURRENT_VERSION = VERSION
@@ -56,11 +56,13 @@ def _fetch_release():
         raise ValueError('정식 배포 정보가 아닙니다.')
     version = data.get('tag_name', '').removeprefix('v')
     _version(version)
-    assets = [a for a in data.get('assets', []) if a.get('name') == ASSET_NAME and a.get('state') == 'uploaded']
+    assets = [a for a in data.get('assets', []) if a.get('name') == PUBLIC_EXE_NAME and a.get('state') == 'uploaded']
+    if not assets:
+        assets = [a for a in data.get('assets', []) if a.get('name') == ASSET_NAME and a.get('state') == 'uploaded']
     asset = assets[0] if len(assets) == 1 else None
     if asset:
         url = urllib.parse.urlsplit(asset.get('browser_download_url', ''))
-        expected = f'/{REPO_OWNER}/{REPO_NAME}/releases/download/{data["tag_name"]}/{ASSET_NAME}'
+        expected = f'/{REPO_OWNER}/{REPO_NAME}/releases/download/{data["tag_name"]}/{asset["name"]}'
         if url.scheme != 'https' or url.netloc != 'github.com' or urllib.parse.unquote(url.path) != expected:
             raise ValueError('업데이트 파일의 출처가 올바르지 않습니다.')
         if type(asset.get('size')) is not int or not 1024 <= asset['size'] <= MAX_DOWNLOAD:
@@ -120,7 +122,7 @@ def _download(asset, target):
         with staged.open('rb') as stream:
             if stream.read(2) != b'MZ':
                 raise ValueError('Windows 실행 파일 형식이 아닙니다.')
-        os.replace(staged, target)
+        atomic_replace(staged, target)
     finally:
         if staged.exists():
             staged.unlink()
@@ -135,7 +137,7 @@ def prepare_update(paths):
         version, _, asset = _fetch_release()
         if not _is_newer_version(version, VERSION) or asset is None:
             raise ValueError('검증된 새 정식 버전이 없습니다.')
-        target = paths.installation / 'versions' / version / ASSET_NAME
+        target = paths.installation / 'versions' / version / INSTALLED_EXE_NAME
         _download(asset, target)
         token = uuid.uuid4().hex
         plan = paths.updates / (token + '.json')
@@ -170,9 +172,10 @@ def monitor_update(paths, token):
         return 1
     _version(plan['version'])
     target = Path(plan['target']).resolve()
-    expected = (paths.installation / 'versions' / plan['version'] / ASSET_NAME).resolve()
+    expected = [(paths.installation / 'versions' / plan['version'] / name).resolve()
+                for name in (INSTALLED_EXE_NAME, ASSET_NAME)]
     try:
-        if target != expected or target.stat().st_size != plan['size'] or ('sha256:' + hashlib.sha256(target.read_bytes()).hexdigest()) != plan['digest'].lower():
+        if target not in expected or target.stat().st_size != plan['size'] or ('sha256:' + hashlib.sha256(target.read_bytes()).hexdigest()) != plan['digest'].lower():
             return rollback('새 버전 파일의 검증이 실패해 기존 버전을 다시 실행했습니다.')
     except OSError:
         return rollback('새 버전 파일을 읽지 못해 기존 버전을 다시 실행했습니다.')

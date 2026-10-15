@@ -380,6 +380,19 @@ class IsolatedTests(unittest.TestCase):
 
 
 class UpdateTests(unittest.TestCase):
+    def test_korean_release_asset_preferred_and_english_still_supported(self):
+        from app_info import PUBLIC_EXE_NAME
+        from urllib.parse import quote
+        def asset(name):
+            return dict(name=name, state='uploaded', size=2048, digest='sha256:' + '0' * 64,
+                        browser_download_url='https://github.com/dpqksr5501/schedule-doc-system/releases/download/v2.1.5/' + quote(name))
+        for names, expected in [([PUBLIC_EXE_NAME, 'GunsuSchedule.exe'], PUBLIC_EXE_NAME),
+                                (['GunsuSchedule.exe'], 'GunsuSchedule.exe')]:
+            release = dict(tag_name='v2.1.5', assets=[asset(name) for name in names])
+            with patch('updater.urllib.request.urlopen', return_value=io.BytesIO(json.dumps(release).encode())):
+                _, _, selected = updater._fetch_release()
+            self.assertEqual(selected['name'], expected)
+
     def test_release_missing_digest_cannot_apply(self):
         release = dict(tag_name='v2.0.1', body='안내', assets=[dict(name='GunsuSchedule.exe', state='uploaded',
             browser_download_url='https://github.com/dpqksr5501/schedule-doc-system/releases/download/v2.0.1/GunsuSchedule.exe', size=2048)])
@@ -458,7 +471,7 @@ class InstallationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             paths = AppPaths.isolated(Path(directory) / '한글 경로')
             paths.ensure_output()
-            executable = paths.installation / 'versions' / '테스트 버전' / '일정 관리.exe'
+            executable = installation.executable_for(paths)
             atomic_copy(sys.executable, executable)
             installation.activate(paths, executable)
             shortcut = paths.desktop / '군수실 일정 관리.lnk'

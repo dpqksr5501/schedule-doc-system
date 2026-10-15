@@ -15,10 +15,11 @@ sys.path.insert(0, str(ROOT))
 from schedule_domain import MAX_BYTES, validate_snapshot
 from document_engine import document_model
 from document_layout import build_plan
+from branding import ASSET_FILES
 
 ALLOWED = {'index.html', 'app.js', 'style.css', 'document.css', 'schedule-core.js',
            '처음사용_5분안내.html',
-           'assets/boeun-symbol.png', 'assets/boeun-slogan.png', 'assets/app_icon.ico'}
+           'assets/app_icon.ico', *ASSET_FILES}
 ORIGIN = 'http://127.0.0.1:8765'
 
 

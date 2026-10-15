@@ -1,12 +1,15 @@
 """Frozen-bundle checks run only in an explicitly supplied isolated directory."""
 from pathlib import Path
 import json
+import sys
 import zipfile
 from app_info import VERSION
 from app_paths import AppPaths
 from main import DesktopApi
 from schedule_domain import empty_snapshot, event_record
 from storage import atomic_bytes, encode
+from branding import ASSET_FILES
+from app_paths import resource_dir
 
 
 def run(root):
@@ -14,6 +17,9 @@ def run(root):
         atomic_bytes(Path(root) / 'smoke-progress.json', json.dumps(
             {'stage': stage}, ensure_ascii=False).encode('utf-8'))
     progress('출력 폴더와 안내문 준비')
+    for filename in ASSET_FILES:
+        if not (resource_dir() / filename).is_file():
+            raise RuntimeError('배포 이미지가 없습니다: ' + filename)
     paths = AppPaths.isolated(root)
     api = DesktopApi(paths)
     if not (paths.output / '처음사용_5분안내.html').is_file():
@@ -66,34 +72,62 @@ def run(root):
     progress('검사 완료')
 
 
-def attach_ui(window, api, root):
+def attach_ui(window, api, root, preserve=False):
     # This is a developer test of our own bridge, never a production data operation.
     def loaded():
         script = """(async () => {
           const api = window.pywebview.api;
           const info = await api.bootstrap();
-          const result = {success: info.success && !info.readOnly,
+          const result = {success: info.success && !info.readOnly, version:info.version,
             methods: Object.keys(api), title: document.title,
             scripts: [...document.scripts].map(s => s.src),
             csp: document.querySelector('[http-equiv="Content-Security-Policy"]').content};
-          const event = window.ScheduleCore.newEvent('2026-10-02');
-          event.title = 'WebView2 연결 점검'; event.notes = '연결 테스트 메모';
-          const snapshot = info.snapshot; snapshot.events = [event];
-          const saved = await api.save_persistent_data(JSON.stringify(snapshot), snapshot.revision);
-          const loaded = await api.bootstrap();
-          result.persistence = saved.success && loaded.snapshot.events[0].notes === event.notes;
+          if (PRESERVE_EXISTING) {
+            result.snapshot = info.snapshot;
+            result.persistence = true;
+          } else {
+            const event = window.ScheduleCore.newEvent('2026-10-02');
+            event.title = 'WebView2 연결 점검'; event.notes = '연결 테스트 메모';
+            const snapshot = info.snapshot; snapshot.events = [event];
+            const saved = await api.save_persistent_data(JSON.stringify(snapshot), snapshot.revision);
+            const loaded = await api.bootstrap();
+            result.persistence = saved.success && loaded.snapshot.events[0].notes === event.notes;
+          }
           result.success = result.success && result.persistence;
           const planned = await api.preview_document({view:'daily',date:'2026-10-02'});
-          result.documentPreview = planned.success && planned.plan.eventCount === 1 &&
+          const expectedCount = PRESERVE_EXISTING ? info.snapshot.events.filter(e=>e.date==='2026-10-02' && e.status!=='cancelled').length : 1;
+          result.documentPreview = planned.success && planned.plan.eventCount === expectedCount &&
             planned.plan.pages[0].rows[0].kind === 'daily-header' &&
             !!document.getElementById('includeAnnotation') &&
             !!document.querySelector('link[href="document.css"]');
           result.success = result.success && result.documentPreview;
+          result.artwork = await Promise.all(ARTWORK_FILES.map(src => new Promise(resolve => {
+            const image = new Image();
+            image.onload = () => resolve(image.naturalWidth > 0 && image.naturalHeight > 0);
+            image.onerror = () => resolve(false);
+            image.src = src;
+          })));
+          result.success = result.success && result.artwork.every(Boolean);
+          const ready = await api.ready();
+          result.success = result.success && ready.success;
           const editing = await api.set_editing(false);
           result.success = result.success && editing.success && !!document.getElementById('newBtn');
           return result;
-        })()"""
+        })()""".replace('ARTWORK_FILES', json.dumps(ASSET_FILES)).replace('PRESERVE_EXISTING', json.dumps(preserve))
         def done(result):
+            result['executable'] = sys.executable
+            if api._installed is not None:
+                import installation
+                import pythoncom
+                pythoncom.CoInitialize()
+                try:
+                    active = installation.active_installation(api._paths)
+                    shortcut = installation.shortcut_target(api._paths.desktop / '군수실 일정 관리.lnk')
+                    result['installedLaunch'] = bool(active and active[1].samefile(sys.executable)
+                                                    and shortcut.samefile(sys.executable))
+                    result['success'] = result['success'] and result['installedLaunch']
+                finally:
+                    pythoncom.CoUninitialize()
             atomic_bytes(Path(root) / 'ui-smoke-result.json', json.dumps(result, ensure_ascii=False).encode('utf-8'))
             api._allow_close = True
             window.destroy()

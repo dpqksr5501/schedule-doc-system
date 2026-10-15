@@ -7,6 +7,18 @@ dialog{border:1px solid #d0dce5;border-radius:14px;padding:0;color:var(--ink);wi
 @media(max-width:960px){.sidebar{width:178px}.brand{gap:7px}.brand-mark{width:32px;height:32px;flex-shrink:0}.brand strong{font-size:13px}.nav-item{padding:12px 8px;font-size:13px}.nav-item span:first-child{display:none}.date-controls{flex-wrap:wrap}.date-controls strong{margin-left:0}.paper{padding:8mm}.output-card{flex-wrap:wrap}.topbar h1{font-size:21px}.top-actions .button{padding:8px 10px;font-size:13px}}
 @media print{body{background:white;color:#000}.no-print,dialog,.sidebar,.topbar,.control-card,.quick-card,.document-info,.output-card{display:none!important}.app-shell,.workspace,.content{display:block!important;margin:0!important;padding:0!important;max-width:none!important}.paper,.paper.landscape{border:0;box-shadow:none;width:100%;max-width:none;min-height:0;padding:0;margin:0;break-after:page;page-break-after:always}.paper:last-child{break-after:auto;page-break-after:auto}.paper-header{margin-top:0}.event-link{color:inherit}.document-table tr,.calendar tr{break-inside:avoid;page-break-inside:avoid}.document-table thead,.calendar thead{display:table-header-group}.document-table th,.calendar th{-webkit-print-color-adjust:exact;print-color-adjust:exact}.gunsu{color:#087b39!important}.v_gunsu{color:#164faa!important}.important{color:#ae2924!important}.paper-footer{margin-top:10px}.memo-marker{display:none}.list-card{border:0}.calendar td{height:auto}}
 
+/* Original artwork keeps its white background and source aspect ratio. */
+.brand .brand-mark{display:block;object-fit:contain;background:#fff;border-radius:0;flex-shrink:0}
+.brand-signature{display:block;width:104px;height:auto;max-width:100%;margin:0 0 20px}
+.help-branding{display:flex;align-items:center;justify-content:space-between;gap:24px;background:#fff;padding:8px 12px}
+.help-branding .help-symbol{width:52px;height:auto;flex-shrink:0}
+.help-branding .help-vision{width:290px;height:auto;max-width:calc(100% - 76px)}
+@media(max-height:800px){
+  .sidebar{padding-top:20px;padding-bottom:20px;overflow-y:auto}
+  .brand{margin-bottom:24px}.sidebar-divider{margin-top:16px;margin-bottom:16px}
+  .nav-item{padding-top:10px;padding-bottom:10px}
+  .sidebar-bottom{padding-top:12px}.brand-signature{width:72px;margin-bottom:10px}
+}
 /* Optional guidance stays out of official documents. */
 .usage-guide{margin:0 0 18px;background:#fff;border:1px solid #d7e2eb;border-radius:10px}
 .usage-guide summary{cursor:pointer;padding:13px 18px;color:#254f70;font-size:15px;list-style-position:inside}

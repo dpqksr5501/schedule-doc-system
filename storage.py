@@ -7,8 +7,21 @@ import re
 import shutil
 import tempfile
 import threading
+import time
 import uuid
 from schedule_domain import MAX_BYTES, UnsupportedSchemaError, empty_snapshot, parse_snapshot, timestamp, validate_snapshot
+
+
+def atomic_replace(source, target):
+    """Keep atomic replacement, with a short bound for Windows sharing locks."""
+    for attempt in range(5):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError as error:
+            if os.name != 'nt' or getattr(error, 'winerror', None) not in (5, 32, 33) or attempt == 4:
+                raise
+            time.sleep(.05 * (2 ** attempt))
 
 
 def atomic_bytes(path, content):
@@ -20,7 +33,7 @@ def atomic_bytes(path, content):
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        atomic_replace(temporary, path)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
@@ -40,7 +53,7 @@ def atomic_copy(source, target):
             shutil.copyfileobj(input_file, output, length=1024 * 1024)
             output.flush()
             os.fsync(output.fileno())
-        os.replace(temporary, target)
+        atomic_replace(temporary, target)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)

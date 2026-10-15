@@ -9,6 +9,7 @@ from document_layout import build_plan, PAGE_BUDGET, CALENDAR_BUDGET
 from schedule_domain import empty_snapshot, event_record, validate_snapshot
 from main import DesktopApi
 from app_paths import AppPaths
+from branding import ARTWORK, artwork_path
 
 
 def sample(identifier='one', **values):
@@ -55,6 +56,55 @@ class DocumentLayoutTests(unittest.TestCase):
         self.assertIn('B', body[-1]['cells'][1]['borders'])
         self.assertIn('▶ 09:00', content([page]))
         self.assertIn('< 군청 소회의실 >', content([page]))
+
+    def test_original_artwork_bytes_manifest_and_geometry_match_preview(self):
+        opf = '{http://www.idpf.org/2007/opf/}'
+        hc = '{http://www.hancom.co.kr/hwpml/2011/core}'
+        with tempfile.TemporaryDirectory() as directory:
+            for view in ('daily', 'weekly', 'monthly'):
+                model = document_model(self.snapshot, dict(view=view, date='2026-10-02'))
+                planned = build_plan(model)
+                expected = [c for p in planned['pages'] for r in p['rows'] for c in r['cells'] if c['picture']]
+                target = Path(directory) / (view + '.hwpx')
+                generate_document(model, target)
+                with zipfile.ZipFile(target) as package:
+                    manifest = ET.fromstring(package.read('Contents/content.hpf')).find(opf + 'manifest')
+                    items = {item.get('id'): item for item in manifest}
+                    pictures = list(ET.fromstring(package.read('Contents/section0.xml')).iter(HP + 'pic'))
+                    self.assertEqual(len(pictures), len(expected))
+                    self.assertNotIn('BinData/image1.bmp', package.namelist())
+                    self.assertNotIn('BinData/image2.bmp', package.namelist())
+                    for picture, cell in zip(pictures, expected):
+                        name, image = cell['picture'], cell['image']
+                        asset = ARTWORK[name]
+                        item = items[picture.find(hc + 'img').get('binaryItemIDRef')]
+                        self.assertEqual(item.get('media-type'), 'image/jpeg')
+                        self.assertEqual(package.read(item.get('href')), artwork_path(name).read_bytes())
+                        self.assertEqual(image['src'], 'assets/branding/' + asset['file'])
+                        size = picture.find(HP + 'sz')
+                        self.assertEqual((int(size.get('width')), int(size.get('height'))),
+                                         (image['width'], image['height']))
+                        pixel_width, pixel_height = asset['pixels']
+                        self.assertAlmostEqual(image['width'] / image['height'], pixel_width / pixel_height, delta=.003)
+                        clip = picture.find(HP + 'imgClip')
+                        self.assertEqual((int(clip.get('right')), int(clip.get('bottom'))),
+                                         (pixel_width * 75, pixel_height * 75))
+
+    def test_brand_headers_repeat_within_page_budgets(self):
+        self.snapshot['events'] = [sample(str(i), title='긴 행사명과 준비사항 ' * 20) for i in range(50)]
+        for view in ('daily', 'weekly', 'monthly'):
+            pages = plan(self.snapshot, view)['pages']
+            self.assertGreater(len(pages), 1)
+            for page in pages:
+                self.assertLessEqual(page['height'], CALENDAR_BUDGET if page['landscape'] else PAGE_BUDGET)
+                pictures = [c for r in page['rows'] for c in r['cells'] if c['picture']]
+                self.assertEqual({c['picture'] for c in pictures},
+                                 {'slogan'} if view == 'daily' else {'symbol', 'vision-wide'})
+                for row in page['rows']:
+                    for cell in row['cells']:
+                        if cell['picture']:
+                            self.assertLessEqual(cell['image']['width'], cell['width'] - 700)
+                            self.assertLessEqual(cell['image']['height'], row['height'] - 600)
 
     def test_weekend_pair_and_explicit_single_day(self):
         self.snapshot['events'] = [sample('sat', date='2026-10-03'), sample('sun', date='2026-10-04')]

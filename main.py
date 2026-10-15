@@ -20,7 +20,7 @@ from document_engine import document_model, generate_document
 from document_layout import build_plan
 import installation
 import updater
-from native_workers import convert_bounded
+from native_workers import convert_bounded, independent_environment
 from hwp_validation import validate_hwp
 
 
@@ -75,7 +75,7 @@ class DesktopApi:
 
     def ready(self):
         try:
-            if self._update_token and self.bootstrap()['readOnly']:
+            if self._installed is not None and self.bootstrap()['readOnly']:
                 raise ValueError('새 버전에서 일정 데이터를 읽지 못해 기존 바로가기를 유지합니다.')
             if self._installed is not None:
                 installation.activate(self._paths, self._installed)
@@ -302,6 +302,25 @@ def _notify(message):
         print(message)
 
 
+def _retry_after_closing():
+    """The user closes the existing app normally; never discard an open edit."""
+    import ctypes
+    return ctypes.windll.user32.MessageBoxW(None,
+        '기존 일정 관리 프로그램이 열려 있습니다.\n\n'
+        '입력 중인 내용을 저장하고 기존 창을 닫은 뒤 [다시 시도]를 누르세요.\n'
+        '설치를 취소해도 기존 프로그램과 일정은 그대로 유지됩니다.',
+        APP_NAME + ' · 설치 및 업데이트', 0x40 | 0x5) == 4
+
+
+def _launch_installed(target, token=None, probe=None, preserve=False):
+    import subprocess
+    arguments = [str(target)] + (['--update-token', token] if token else [])
+    if probe is not None:
+        arguments += ['--upgrade-smoke-test' if preserve else '--install-smoke-test', str(probe)]
+    subprocess.Popen(arguments, env=independent_environment(),
+                     creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+
+
 def main():
     # Worker dispatch precedes WebView imports so helpers never open another GUI.
     if len(sys.argv) == 3 and sys.argv[1] == '--smoke-test':
@@ -313,7 +332,9 @@ def main():
         ok, message = convert_hwpx_to_hwp(sys.argv[2], sys.argv[3])
         atomic_bytes(sys.argv[4], json.dumps({'success': ok, 'message': message}).encode('utf-8'))
         return
-    ui_smoke = Path(sys.argv[2]) if len(sys.argv) == 3 and sys.argv[1] == '--ui-smoke-test' else None
+    preserve_smoke = len(sys.argv) == 3 and sys.argv[1] == '--upgrade-smoke-test'
+    install_smoke = len(sys.argv) == 3 and sys.argv[1] in ('--install-smoke-test', '--upgrade-smoke-test')
+    ui_smoke = Path(sys.argv[2]) if len(sys.argv) == 3 and sys.argv[1] in ('--ui-smoke-test', '--install-smoke-test', '--upgrade-smoke-test') else None
     paths = AppPaths.isolated(ui_smoke) if ui_smoke else AppPaths.current()
     paths.ensure_data()
     handler = RotatingFileHandler(paths.data / 'application.log', maxBytes=1024 * 1024, backupCount=3, encoding='utf-8')
@@ -328,17 +349,32 @@ def main():
     deadline = time.monotonic() + (20 if token else 0)
     while not ui_smoke and not instance.acquire():
         if time.monotonic() >= deadline:
+            if (os.name == 'nt' and getattr(sys, 'frozen', False) and not token and
+                    Path(sys.executable).resolve() != installation.executable_for(paths).resolve()):
+                if _retry_after_closing():
+                    continue
+                return
             _notify('일정 관리 프로그램이 이미 실행 중입니다. 작업 표시줄에서 열린 창을 확인해 주세요.')
             return
         time.sleep(0.5)
     try:
-        import webview
-        api = DesktopApi(paths)
         try:
-            api._installed = installation.prepare_installation(paths) if not ui_smoke else None
+            installed = installation.prepare_installation(paths) if not ui_smoke or install_smoke else None
+            if installed is not None and Path(sys.executable).resolve() != installed.resolve():
+                instance.close()
+                _launch_installed(installed, token, ui_smoke if install_smoke else None, preserve_smoke)
+                return
         except Exception:
             logging.exception('Per-user installation failed')
-            _notify('바탕화면 실행 바로가기를 준비하지 못했습니다. 내려받은 실행 파일로 계속 사용할 수 있습니다.')
+            if ui_smoke:
+                raise
+            _notify('프로그램 설치를 완료하지 못했습니다. 기존 바로가기와 일정은 그대로 유지됩니다.\n'
+                    '폴더 권한과 저장 공간을 확인하고 다시 실행해 주세요.\n'
+                    '오류 기록: ' + str(paths.data / 'application.log'))
+            return
+        import webview
+        api = DesktopApi(paths)
+        api._installed = installed
         api._update_token = token
         # Edge's native message bridge works with file URLs. Avoid a local HTTP
         # listener, which can be blocked by institution firewalls.
@@ -350,7 +386,7 @@ def main():
         api._window.events.closing += api._closing
         if ui_smoke:
             from smoke import attach_ui
-            attach_ui(api._window, api, ui_smoke)
+            attach_ui(api._window, api, ui_smoke, preserve=preserve_smoke)
         # LocalStorage is only a legacy migration source, never the canonical database.
         webview.start(gui='edgechromium', debug=False, private_mode=False,
                       storage_path=str(paths.data / 'webview'))
@@ -368,12 +404,12 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as error:
-        if len(sys.argv) == 3 and sys.argv[1] in ('--smoke-test', '--ui-smoke-test'):
+        if len(sys.argv) == 3 and sys.argv[1] in ('--smoke-test', '--ui-smoke-test', '--install-smoke-test', '--upgrade-smoke-test'):
             # 검사 중에는 대화상자가 CI를 멈추지 않도록 오류를 파일로 남깁니다.
             import traceback
             root = Path(sys.argv[2])
             root.mkdir(parents=True, exist_ok=True)
-            name = 'ui-smoke-result.json' if sys.argv[1] == '--ui-smoke-test' else 'smoke-result.json'
+            name = 'smoke-result.json' if sys.argv[1] == '--smoke-test' else 'ui-smoke-result.json'
             atomic_bytes(root / name, json.dumps(
                 {'success': False, 'error': str(error), 'traceback': traceback.format_exc()},
                 ensure_ascii=False).encode('utf-8'))

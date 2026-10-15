@@ -5,6 +5,7 @@ notes never enlarge a printed page beyond its budget.
 """
 from datetime import date, timedelta
 import unicodedata
+from branding import picture_spec
 
 PORTRAIT_WIDTH, LANDSCAPE_WIDTH = 55543, 79384
 PAGE_BUDGET, CALENDAR_BUDGET = 78000, 54000
@@ -167,15 +168,15 @@ def _daily_pages(model):
 
 def _weekly_header(model):
     headings = [row([
-        cell('', 0, 6979, 2, picture='symbol'),
-        cell('주 간 주 요 행 사 계 획\n(' + model['period_str'] + ')', 2, 42186, 4,
-             font=1800, bold=True, align='CENTER'),
-        cell('', 6, 6378, picture='slogan')], 6800, 'weekly-header'),
+        cell('', 0, 6979, 2, align='CENTER', picture='symbol'),
+        cell('', 2, PORTRAIT_WIDTH - 6979, 5, align='RIGHT', picture='vision-wide')], 3800, 'brand-header'),
+        row([cell('주 간 주 요 행 사 계 획\n(' + model['period_str'] + ')', 0, PORTRAIT_WIDTH, 7,
+                  font=1800, bold=True, align='CENTER')], 5000, 'weekly-header'),
         row([cell(model['created_date_str'], 0, PORTRAIT_WIDTH, 7, font=900, align='RIGHT')], 1400, 'created'),
         row([cell(t, c, w, s, font=1100, bold=True, align='CENTER', borders='LTRB')
              for t, c, w, s in zip(['일자', '시간', '행 사 명', '장 소', '주관/관련부서'],
                                   WEEKLY_COLUMNS, WEEKLY_WIDTHS, WEEKLY_SPANS)], 2200, 'column-header')]
-    headings[0]['cells'][1]['segments'] = [dict(text='주 간 주 요 행 사 계 획', font=2300),
+    headings[1]['cells'][0]['segments'] = [dict(text='주 간 주 요 행 사 계 획', font=2300),
                                            dict(text='(' + model['period_str'] + ')', font=1400)]
     return headings
 
@@ -205,7 +206,8 @@ def _weekly_pages(model):
                     annotation_style(cells[2], lines[2][offset:offset + 20], offset, event, model['includeAnnotation'])
                 rows.append(row(cells, height, date=day['date']))
     pages = []
-    for chunk in paginate(rows, PAGE_BUDGET - 10400):
+    headings = _weekly_header(model)
+    for chunk in paginate(rows, PAGE_BUDGET - sum(r['height'] for r in headings)):
         # Merge each date within this page; a continuation page starts a new cell.
         for start in range(len(chunk)):
             if start and chunk[start - 1]['date'] == chunk[start]['date']:
@@ -252,16 +254,21 @@ def _monthly_pages(model):
             head_height = 3000 if offset else 1900
             groups.append(dict(rows=[row(headings, head_height, 'calendar-date'), row(body, height, 'calendar-body')], height=head_height + height))
         cursor += timedelta(days=7)
-    chunks = paginate(groups, CALENDAR_BUDGET - 4200)
+    header_height = 3800 + 4200
+    chunks = paginate(groups, CALENDAR_BUDGET - header_height)
     pages = []
     for chunk in chunks:
-        spare = CALENDAR_BUDGET - 4200 - sum(g['height'] for g in chunk)
+        spare = CALENDAR_BUDGET - header_height - sum(g['height'] for g in chunk)
         for i, group in enumerate(chunk):
             extra = spare // len(chunk) + (spare % len(chunk) if i == len(chunk) - 1 else 0)
             group['rows'][1]['height'] += extra
         heading = row([cell('월간 일정표   ' + model['period_str'], 0, LANDSCAPE_WIDTH, 7,
                             font=1800, color='#FF0000', bold=True, align='CENTER')], 4200, 'monthly-header')
-        pages.append(page('monthly', [heading] + [r for g in chunk for r in g['rows']], 7, LANDSCAPE_WIDTH, True, widths))
+        branding = row([cell('', 0, widths[0], align='LEFT', picture='symbol'),
+                        cell('', 1, sum(widths[1:]), 6, align='RIGHT', picture='vision-wide')],
+                       3800, 'brand-header')
+        pages.append(page('monthly', [branding, heading] + [r for g in chunk for r in g['rows']],
+                          7, LANDSCAPE_WIDTH, True, widths))
     return pages
 
 
@@ -300,6 +307,11 @@ def _appendix_pages(model):
 def build_plan(model):
     pages = {'daily': _daily_pages, 'weekly': _weekly_pages, 'monthly': _monthly_pages}[model['view']](model)
     pages += _appendix_pages(model)
+    for item in pages:
+        for item_row in item['rows']:
+            for item_cell in item_row['cells']:
+                if item_cell['picture']:
+                    item_cell['image'] = picture_spec(item_cell['picture'], item_cell['width'], item_row['height'])
     return dict(title=model['title'], period=model['period_str'], pages=pages,
                 eventCount=sum(len(d['events']) for d in model['days']),
                 includeAnnotation=model['includeAnnotation'], includeNotes=model['includeNotes'])

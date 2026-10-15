@@ -31,10 +31,22 @@ jobs:
       - name: 실제 WebView2 화면과 저장 연결 검사
         run: |
           $probe = Join-Path $env:RUNNER_TEMP 'gunsu-ui-probe'
-          $process = Start-Process -FilePath '.\dist\GunsuSchedule.exe' -ArgumentList @('--ui-smoke-test', ('"' + $probe + '"')) -WindowStyle Hidden -PassThru
+          $process = Start-Process -FilePath '.\dist\군수실 일정 관리 설치.exe' -ArgumentList @('--ui-smoke-test', ('"' + $probe + '"')) -WindowStyle Hidden -PassThru
           if (-not $process.WaitForExit(90000)) { throw 'WebView2 화면 점검 시간 초과' }
           $report = Get-Content -LiteralPath (Join-Path $probe 'ui-smoke-result.json') -Raw | ConvertFrom-Json
           if (-not $report.success) { throw 'WebView2 브릿지 점검 실패' }
+      - name: 한글 설치 파일에서 설치·재실행·바로가기 전환 검사
+        run: |
+          $probe = Join-Path $env:RUNNER_TEMP 'gunsu-install-probe'
+          $reportPath = Join-Path $probe 'ui-smoke-result.json'
+          Start-Process -FilePath '.\dist\군수실 일정 관리 설치.exe' -ArgumentList @('--install-smoke-test', ('"' + $probe + '"')) -WindowStyle Hidden
+          $deadline = (Get-Date).AddSeconds(90)
+          while (-not (Test-Path -LiteralPath $reportPath)) {
+            if ((Get-Date) -ge $deadline) { throw '설치·재실행 점검 시간 초과' }
+            Start-Sleep -Seconds 1
+          }
+          $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
+          if (-not $report.success -or -not $report.installedLaunch) { throw '설치·바로가기 전환 점검 실패' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -43,13 +55,16 @@ jobs:
             build/bundle-probe-*/smoke-*.json
             ${{ runner.temp }}/gunsu-ui-probe/ui-smoke-result.json
             ${{ runner.temp }}/gunsu-ui-probe/data/application.log
+            ${{ runner.temp }}/gunsu-install-probe/ui-smoke-result.json
+            ${{ runner.temp }}/gunsu-install-probe/data/application.log
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: GunsuSchedule-Windows
           path: |
+            dist/군수실 일정 관리 설치.exe
             dist/GunsuSchedule.exe
-            release/GunsuSchedule-v*-Windows.zip
+            release/군수실 일정 관리-v*-Windows.zip
             release/SHA256SUMS.txt
             release/release-manifest.json
             release/RELEASE_NOTES.txt
@@ -73,5 +88,6 @@ jobs:
         run: |
           gh release create "$RELEASE_TAG" --repo "$REPOSITORY" --draft --verify-tag \
             --notes-file artifacts/release/RELEASE_NOTES.txt --title "군수실 일정 관리 $RELEASE_TAG" \
-            artifacts/dist/GunsuSchedule.exe "artifacts/release/GunsuSchedule-${RELEASE_TAG}-Windows.zip" \
+            "artifacts/dist/군수실 일정 관리 설치.exe" artifacts/dist/GunsuSchedule.exe \
+            "artifacts/release/군수실 일정 관리-${RELEASE_TAG}-Windows.zip" \
             artifacts/release/SHA256SUMS.txt artifacts/release/release-manifest.json

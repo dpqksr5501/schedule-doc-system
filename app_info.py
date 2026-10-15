@@ -1,6 +1,10 @@
 """Release identity shared by packaging, UI and the update service."""
-VERSION = "2.1.2"
+VERSION = "2.1.4"
 APP_NAME = "군수실 일정 관리"
+# Keep this download name for updaters already installed in v2.1.3 and earlier.
 ASSET_NAME = "GunsuSchedule.exe"
+PUBLIC_EXE_NAME = APP_NAME + " 설치.exe"
+INSTALLED_EXE_NAME = APP_NAME + ".exe"
+PUBLIC_ZIP_NAME = f"{APP_NAME}-v{VERSION}-Windows.zip"
 REPO_OWNER = "dpqksr5501"
 REPO_NAME = "schedule-doc-system"

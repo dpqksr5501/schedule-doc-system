@@ -5,12 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
   <title>군수실 일정 관리</title>
+  <link rel="icon" href="assets/branding/boeun-symbol.jpg" type="image/jpeg">
   <link rel="stylesheet" href="style.css"><link rel="stylesheet" href="document.css">
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar no-print">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">일</span><div><strong>군수실 일정 관리</strong><span id="orgLabel">보은군 · 업무 도우미</span></div></div>
+      <div class="brand"><img class="brand-mark" src="assets/branding/boeun-symbol.jpg" width="42" height="42" alt="보은군 심벌마크"><div><strong>군수실 일정 관리</strong><span id="orgLabel">보은군 · 업무 도우미</span></div></div>
       <div class="nav-caption">일정과 문서</div>
       <nav id="viewNav" aria-label="일정 양식">
         <button class="nav-item active" data-view="daily"><span aria-hidden="true">01</span> 일일 일정표</button>
@@ -23,7 +24,7 @@
       <button class="nav-item" id="trashBtn">휴지통 <span class="count" id="trashCount">0</span></button>
       <button class="nav-item" id="toolsBtn">백업 · 복원 · 업데이트</button>
       <button class="nav-item" id="helpBtn">사용 방법 · 저장 위치</button>
-      <div class="sidebar-bottom"><span class="live-dot"></span> 이 PC에 일정 보관<span id="versionLabel">버전 확인 중</span></div>
+      <div class="sidebar-bottom"><img class="brand-signature" src="assets/branding/boeun-brand-slogan.jpg" width="104" height="79" alt="참 좋아 you 보은"><div><span class="live-dot"></span> 이 PC에 일정 보관</div><span id="versionLabel">버전 확인 중</span></div>
     </aside>
     <div class="workspace">
       <header class="topbar no-print">
