@@ -57,9 +57,9 @@ def run(root):
         pythoncom.CoInitialize()
         try:
             progress('바로가기 대상 실행 파일 확인')
-            shortcut = paths.desktop / '군수실 일정 관리.lnk'
+            shortcut = installation.desktop_shortcut(paths)
             target = installation.shortcut_target(shortcut)
-            if not target.samefile(installed):
+            if not target.samefile(installation.verified_launcher(paths)):
                 diagnostic = {'actual': str(target), 'expected': str(installed),
                               'actualResolved': str(target.resolve()), 'expectedResolved': str(installed.resolve()),
                               'actualStat': list(target.stat()), 'expectedStat': list(installed.stat())}
@@ -122,12 +122,15 @@ def attach_ui(window, api, root, preserve=False):
                 pythoncom.CoInitialize()
                 try:
                     active = installation.active_installation(api._paths)
-                    shortcut = installation.shortcut_target(api._paths.desktop / '군수실 일정 관리.lnk')
+                    shortcut = installation.shortcut_target(installation.desktop_shortcut(api._paths))
+                    stable = installation.verified_launcher(api._paths)
                     result['installedLaunch'] = bool(active and active[1].samefile(sys.executable)
-                                                    and shortcut.samefile(sys.executable))
-                    result['activationVerified'] = bool(active and shortcut.samefile(active[1])
+                                                    and shortcut.samefile(stable))
+                    result['activationVerified'] = bool(active and shortcut.samefile(stable)
                         and active[0] == VERSION and active[1].read_bytes() == Path(sys.executable).read_bytes())
                     result['success'] = result['success'] and result['activationVerified']
+                    result['shortcut'] = str(installation.desktop_shortcut(api._paths))
+                    result['launcher'] = str(stable)
                 finally:
                     pythoncom.CoUninitialize()
             atomic_bytes(Path(root) / 'ui-smoke-result.json', json.dumps(result, ensure_ascii=False).encode('utf-8'))

@@ -139,12 +139,16 @@ def prepare_update(paths):
             raise ValueError('검증된 새 정식 버전이 없습니다.')
         target = paths.installation / 'versions' / version / INSTALLED_EXE_NAME
         _download(asset, target)
+        from installation import verified_launcher, active_installation
+        installed = active_installation(paths)
+        if not installed or installed[0] != VERSION:
+            raise ValueError('현재 설치 정보를 확인한 뒤 업데이트해 주세요.')
         token = uuid.uuid4().hex
         plan = paths.updates / (token + '.json')
         atomic_bytes(plan, json.dumps({'token': token, 'version': version, 'target': str(target),
-                                     'previous': sys.executable, 'digest': asset['digest'],
+                                     'previous': str(installed[1]), 'digest': asset['digest'],
                                      'size': asset['size']}).encode('utf-8'))
-        subprocess.Popen(self_command('--monitor-update', token), env=independent_environment(),
+        subprocess.Popen([str(verified_launcher(paths)), '--apply-update', token], env=independent_environment(),
                          creationflags=subprocess.CREATE_NO_WINDOW)
         return {'success': True, 'message': '검증된 새 버전을 시작합니다. 기존 버전은 복구용으로 보관합니다.'}
     except Exception as error:
@@ -153,18 +157,25 @@ def prepare_update(paths):
         _UPDATE_LOCK.release()
 
 
-def monitor_update(paths, token):
+def monitor_update(paths, token, expected_previous=None, probe=None):
     if not re.fullmatch(r'[0-9a-f]{32}', token):
         raise ValueError('잘못된 업데이트 작업 번호')
     plan_path = paths.updates / (token + '.json')
     plan = json.loads(plan_path.read_text(encoding='utf-8'))
     previous = Path(plan['previous']).resolve()
-    if previous != Path(sys.executable).resolve():
+    if previous != Path(expected_previous or sys.executable).resolve():
         raise ValueError('이전 버전의 실행 경로가 올바르지 않습니다.')
+    original_active = (paths.installation / 'active.json').read_bytes() if expected_previous else None
     def rollback(message):
         atomic_bytes(paths.updates / 'last_failure.txt', message.encode('utf-8'))
         try:
-            if previous.is_file():
+            if original_active is not None:
+                current = json.loads((paths.installation / 'active.json').read_text('utf-8'))
+                if current.get('version') == plan['version']:
+                    atomic_bytes(paths.installation / 'active.json', original_active)
+            if probe:
+                atomic_bytes(Path(probe) / 'monitor-rollback.json', json.dumps({'previous': str(previous)}).encode('utf-8'))
+            elif previous.is_file():
                 subprocess.Popen([str(previous)], env=independent_environment(), creationflags=subprocess.CREATE_NO_WINDOW)
         except OSError:
             atomic_bytes(paths.updates / 'last_failure.txt',
@@ -181,13 +192,23 @@ def monitor_update(paths, token):
         return rollback('새 버전 파일을 읽지 못해 기존 버전을 다시 실행했습니다.')
     # The old GUI closes normally. The new version waits for its mutex to be released.
     try:
-        process = subprocess.Popen([str(target), '--update-token', token], env=independent_environment(),
+        arguments = ([str(target), '--update-smoke-test', str(probe), token] if probe else
+                     [str(target), '--update-token', token])
+        process = subprocess.Popen(arguments, env=independent_environment(),
                                    creationflags=subprocess.CREATE_NO_WINDOW)
     except OSError:
         return rollback('새 버전 실행이 실패해 기존 버전을 다시 실행했습니다.')
     ready = paths.updates / (token + '.ready')
     for _ in range(90):
         if ready.exists():
+            if expected_previous is not None:
+                from launch_registry import read_record, validate_record
+                try:
+                    active = validate_record(paths, read_record(paths))
+                    if active[0] != plan['version'] or active[1] != target:
+                        raise ValueError('시작 확인 정보가 새 버전과 다릅니다.')
+                except (OSError, ValueError, KeyError, TypeError):
+                    return rollback('새 버전의 시작 확인 정보를 검증하지 못해 이전 버전을 열었습니다.')
             return 0  # New app activates the desktop shortcut only after successful bootstrap.
         failed = paths.updates / (token + '.failed')
         if failed.exists() and failed.read_text('utf-8') == 'data-unreadable':

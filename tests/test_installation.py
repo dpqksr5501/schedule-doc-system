@@ -12,6 +12,8 @@ from app_info import VERSION, PUBLIC_EXE_NAME, INSTALLED_EXE_NAME, ASSET_NAME
 from app_paths import AppPaths
 import installation
 import main
+from launcher_fixture import use_launcher_fixture
+from launch_registry import launcher_path
 
 
 class InstallationFlowTests(unittest.TestCase):
@@ -20,6 +22,7 @@ class InstallationFlowTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.paths = AppPaths.isolated(Path(self.directory.name) / '한글 사용자 경로')
         self.paths.ensure_output()
+        use_launcher_fixture(self, self.paths)
         self.source = Path(self.directory.name) / '새 배포' / PUBLIC_EXE_NAME
         self.source.parent.mkdir()
         self.source.write_bytes(b'MZnew-release')
@@ -165,11 +168,15 @@ class ShortcutTransactionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             paths = AppPaths.isolated(directory)
             paths.ensure_output()
+            use_launcher_fixture(self, paths)
             executable = installation.executable_for(paths)
             atomic_copy(sys.executable, executable)
             installation.activate(paths, executable)
             record = paths.installation / 'active.json'
             shortcut = paths.desktop / '군수실 일정 관리.lnk'
+            # Exercise first-time migration failure, not the steady-state pointer-only update.
+            import desktop_entries
+            desktop_entries.write_shortcut(shortcut, executable)
             old_record, old_link = record.read_bytes(), shortcut.read_bytes()
             def fail_link(path, content):
                 if Path(path) == shortcut:

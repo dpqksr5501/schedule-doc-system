@@ -10,6 +10,7 @@ import uuid
 import zipfile
 from app_info import VERSION, ASSET_NAME, PUBLIC_EXE_NAME, PUBLIC_ZIP_NAME
 from branding import ASSET_FILES
+from launch_registry import PROTOCOL, LAUNCHER_NAME
 
 ROOT = Path(__file__).resolve().parent
 
@@ -20,11 +21,22 @@ def main():
     subprocess.run([sys.executable, '-X', 'utf8', str(ROOT / 'run_tests.py')], cwd=ROOT, check=True)
     # A fresh work directory prevents cache/file-lock collisions between builds.
     work = ROOT / 'build' / ('package-' + uuid.uuid4().hex[:12])
+    # Build a separate, version-independent launcher, then embed it in the installer.
+    subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--onefile', '--noconsole',
+        '--workpath', str(work / 'launcher'), '--specpath', str(ROOT / 'build'), '--noupx',
+        '--name', LAUNCHER_NAME[:-4], '--icon', str(ROOT / 'assets' / 'app_icon.ico'),
+        str(ROOT / 'launcher_main.py')], cwd=ROOT, check=True)
+    launcher = ROOT / 'dist' / LAUNCHER_NAME
+    launcher_manifest = ROOT / 'build' / 'launcher-manifest.json'
+    launcher_manifest.write_text(json.dumps(dict(protocol=PROTOCOL,
+        sha256=hashlib.sha256(launcher.read_bytes()).hexdigest())), 'utf-8')
     args = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--onefile', '--noconsole',
             '--workpath', str(work), '--specpath', str(ROOT / 'build'),
             '--noupx', '--name', PUBLIC_EXE_NAME[:-4], '--icon', str(ROOT / 'assets' / 'app_icon.ico'),
             '--hidden-import', 'win32com.client', '--hidden-import', 'win32com.shell.shell',
             '--hidden-import', 'win32timezone', '--hidden-import', 'pythoncom']
+    args += ['--add-data', f'{launcher}{os.pathsep}assets/launcher',
+             '--add-data', f'{launcher_manifest}{os.pathsep}assets/launcher']
     for name in ['index.html', 'style.css', 'document.css', 'app.js', 'schedule-core.js', '사용설명서.txt', '처음사용_5분안내.html',
                  'assets/template.hwpx', 'assets/manual.html', 'assets/app_icon.ico',
                  *ASSET_FILES]:

@@ -78,7 +78,7 @@ class DesktopApi:
             if self._installed is not None and self.bootstrap()['readOnly']:
                 raise ValueError('새 버전에서 일정 데이터를 읽지 못해 기존 바로가기를 유지합니다.')
             if self._installed is not None:
-                installation.activate(self._paths, self._installed)
+                installation.activate(self._paths, self._installed, token=self._update_token)
             if self._update_token:
                 atomic_bytes(self._paths.updates / (self._update_token + '.ready'), b'ready')
                 failure = self._paths.updates / 'last_failure.txt'
@@ -347,20 +347,23 @@ def main():
         atomic_bytes(sys.argv[4], json.dumps({'success': ok, 'message': message}).encode('utf-8'))
         return
     update_smoke = len(sys.argv) == 4 and sys.argv[1] == '--update-smoke-test'
+    migration_smoke = len(sys.argv) == 3 and sys.argv[1] == '--migrate-smoke-test'
     preserve_smoke = update_smoke or len(sys.argv) == 3 and sys.argv[1] == '--upgrade-smoke-test'
     install_smoke = len(sys.argv) == 3 and sys.argv[1] in ('--install-smoke-test', '--upgrade-smoke-test')
     ui_smoke = Path(sys.argv[2]) if update_smoke or len(sys.argv) == 3 and sys.argv[1] in ('--ui-smoke-test', '--install-smoke-test', '--upgrade-smoke-test') else None
-    paths = AppPaths.isolated(ui_smoke) if ui_smoke else AppPaths.current()
+    paths = AppPaths.isolated(Path(sys.argv[2])) if migration_smoke else AppPaths.isolated(ui_smoke) if ui_smoke else AppPaths.current()
     paths.ensure_data()
     handler = RotatingFileHandler(paths.data / 'application.log', maxBytes=1024 * 1024, backupCount=3, encoding='utf-8')
     logging.basicConfig(level=logging.INFO, handlers=[handler], format='%(asctime)s %(levelname)s %(message)s')
     if len(sys.argv) == 3 and sys.argv[1] == '--monitor-update':
         updater.monitor_update(paths, sys.argv[2])
         return
-    if len(sys.argv) == 2 and sys.argv[1] == '--archive-desktop-entry':
+    if migration_smoke or len(sys.argv) == 2 and sys.argv[1] == '--archive-desktop-entry':
         try:
             installation.archive_legacy_desktop_entry(paths)
         except Exception:
+            if migration_smoke:
+                raise
             # Optional housekeeping must not interrupt a working application.
             logging.warning('Legacy desktop EXE could not be archived; leave it in place', exc_info=True)
         return
@@ -436,7 +439,8 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as error:
-        if len(sys.argv) == 3 and sys.argv[1] in ('--smoke-test', '--ui-smoke-test', '--install-smoke-test', '--upgrade-smoke-test'):
+        if (len(sys.argv) == 3 and sys.argv[1] in ('--smoke-test', '--ui-smoke-test', '--install-smoke-test', '--upgrade-smoke-test', '--migrate-smoke-test')
+                or len(sys.argv) == 4 and sys.argv[1] == '--update-smoke-test'):
             # 검사 중에는 대화상자가 CI를 멈추지 않도록 오류를 파일로 남깁니다.
             import traceback
             root = Path(sys.argv[2])

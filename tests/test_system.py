@@ -471,13 +471,16 @@ class InstallationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             paths = AppPaths.isolated(Path(directory) / '한글 경로')
             paths.ensure_output()
+            from launcher_fixture import use_launcher_fixture
+            from launch_registry import launcher_path
+            use_launcher_fixture(self, paths)
             executable = installation.executable_for(paths)
             atomic_copy(sys.executable, executable)
             installation.activate(paths, executable)
             shortcut = paths.desktop / '군수실 일정 관리.lnk'
             pythoncom.CoInitialize()
             try:
-                self.assertTrue(installation.shortcut_target(shortcut).samefile(executable))
+                self.assertTrue(installation.shortcut_target(shortcut).samefile(launcher_path(paths)))
             finally:
                 pythoncom.CoUninitialize()
             active = paths.installation / 'active.json'

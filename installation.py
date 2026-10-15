@@ -1,57 +1,82 @@
-"""Per-user, versioned installation. A working previous version is never replaced."""
+"""Versioned app installation, fixed launcher, and identity-based desktop migration."""
 from pathlib import Path
-import hashlib
 import json
 import logging
 import os
 import re
 import sys
-import time
 import uuid
 from app_info import ASSET_NAME, INSTALLED_EXE_NAME, VERSION
+from app_paths import resource_dir
 from storage import atomic_bytes, atomic_copy, atomic_replace
+from launch_registry import (PROTOCOL, launcher_path, digest as _digest, version as _version,
+                             read_record, read_records, validate_record)
+import desktop_entries
 
 
 def executable_for(paths, version=VERSION):
     return paths.installation / 'versions' / version / INSTALLED_EXE_NAME
 
 
-def _version(value):
-    if not isinstance(value, str) or not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', value):
-        raise ValueError('설치 버전 정보가 올바르지 않습니다.')
-    return tuple(map(int, value.split('.')))
-
-
-def _digest(path):
-    with Path(path).open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
-
-
 def active_installation(paths):
-    """Accept only our own version directory, including legacy English names."""
-    active = paths.installation / 'active.json'
-    if not active.exists():
+    if not any((paths.installation / name).exists() for name in ('active.json', 'active.json.bak')):
         return None
     try:
-        if active.stat().st_size > 8192:
-            raise ValueError('설치 정보가 너무 큽니다.')
-        record = json.loads(active.read_text('utf-8'))
-        version = record['version']
-        _version(version)
-        target = Path(record['executable']).resolve()
-        root = (paths.installation / 'versions').resolve()
-        allowed = [(root / version / name).resolve() for name in (INSTALLED_EXE_NAME, ASSET_NAME)]
-        if not target.is_relative_to(root) or target not in allowed or not target.is_file():
-            raise ValueError('설치 경로가 올바르지 않습니다.')
-        with target.open('rb') as stream:
-            if stream.read(2) != b'MZ':
-                raise ValueError('설치된 실행 파일을 확인하지 못했습니다.')
-        if record.get('sha256') and record['sha256'] != _digest(target):
-            raise ValueError('설치된 실행 파일이 변경되었습니다.')
-        return version, target
+        for record in read_records(paths):
+            try:
+                return validate_record(paths, record, require_digest=False)
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+        raise ValueError('설치 기록을 검증하지 못했습니다.')
     except (OSError, ValueError, KeyError, TypeError):
         logging.warning('Active installation record could not be validated', exc_info=True)
         return None
+
+
+def launcher_resource():
+    root = resource_dir() / 'assets' / 'launcher'
+    return root / 'GunsuLauncher.exe', json.loads((root / 'launcher-manifest.json').read_text('utf-8'))
+
+
+def verified_launcher(paths):
+    target = launcher_path(paths)
+    record = json.loads(target.with_name('manifest.json').read_text('utf-8'))
+    if type(record.get('protocol')) is not int or record['protocol'] != PROTOCOL or record.get('sha256') != _digest(target):
+        raise ValueError('실행기 검증에 실패했습니다.')
+    with target.open('rb') as stream:
+        if stream.read(2) != b'MZ':
+            raise ValueError('실행기 형식이 올바르지 않습니다.')
+    return target
+
+
+def ensure_launcher(paths):
+    try:
+        return verified_launcher(paths)  # An installed protocol-1 launcher stays fixed across app versions.
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    try:
+        existing = json.loads(launcher_path(paths).with_name('manifest.json').read_text('utf-8'))
+        if type(existing.get('protocol')) is int and existing['protocol'] > PROTOCOL:
+            raise RuntimeError('더 최신 실행기가 설치되어 있습니다. 최신 설치 파일로 복구해 주세요.')
+    except (OSError, ValueError, TypeError):
+        pass
+    source, record = launcher_resource()
+    if type(record.get('protocol')) is not int or record['protocol'] != PROTOCOL or record.get('sha256') != _digest(source):
+        raise ValueError('설치 파일에 포함된 실행기를 검증하지 못했습니다.')
+    with source.open('rb') as stream:
+        if stream.read(2) != b'MZ':
+            raise ValueError('실행기 형식이 올바르지 않습니다.')
+    target = launcher_path(paths)
+    staged = target.with_name('.launcher-' + uuid.uuid4().hex + '.exe')
+    try:
+        atomic_copy(source, staged)
+        if _digest(staged) != record['sha256']:
+            raise OSError('실행기 복사 결과가 원본과 다릅니다.')
+        atomic_replace(staged, target)
+        atomic_bytes(target.with_name('manifest.json'), json.dumps(record).encode('utf-8'))
+    finally:
+        staged.unlink(missing_ok=True)
+    return verified_launcher(paths)
 
 
 def prepare_installation(paths):
@@ -79,7 +104,15 @@ def prepare_installation(paths):
     return destination
 
 
-def activate(paths, executable=None):
+def desktop_shortcut(paths):
+    name = read_record(paths).get('shortcutName', desktop_entries.DEFAULT_SHORTCUT)
+    path = paths.desktop / name
+    if path.parent.resolve() != paths.desktop.resolve():
+        raise ValueError('바로가기 위치가 올바르지 않습니다.')
+    return path
+
+
+def activate(paths, executable=None, token=None):
     executable = Path(executable or executable_for(paths))
     if not executable.is_file():
         raise OSError('실행 파일을 찾지 못했습니다.')
@@ -87,116 +120,70 @@ def activate(paths, executable=None):
     if current and _version(current[0]) > _version(VERSION):
         raise ValueError('더 최신 버전이 설치되어 있어 기존 바로가기를 유지합니다.')
     active = paths.installation / 'active.json'
-    previous = active.read_bytes() if active.exists() else None
-    record = json.dumps({'version': VERSION, 'executable': str(executable), 'sha256': _digest(executable)},
-                        ensure_ascii=False).encode('utf-8')
-    # Stage the link first. Never let a partial COM Save replace the live shortcut.
-    staged = paths.desktop / ('.GunsuSchedule-' + uuid.uuid4().hex + '.lnk')
-    if os.name == 'nt':
-        import pythoncom
-        from win32com.shell import shell
-        pythoncom.CoInitialize()
+    original = active.read_bytes() if active.exists() else None
+    try:
+        old_record = read_record(paths)
+    except (OSError, ValueError, KeyError, TypeError):
+        old_record = {}
+    launcher = ensure_launcher(paths)
+    origin = None
+    if token and re.fullmatch(r'[0-9a-f]{32}', token):
         try:
-            # Unicode Shell Link API로 시스템 언어와 관계없이 한글 경로를 보존합니다.
-            shortcut = pythoncom.CoCreateInstance(shell.CLSID_ShellLink, None,
-                pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink)
-            shortcut.SetPath(str(executable.resolve()))
-            shortcut.SetWorkingDirectory(str(executable.parent.resolve()))
-            shortcut.SetDescription('군수실 일정 관리 - 일정 입력, 업무 메모, 한글 문서 저장')
-            shortcut.SetIconLocation(str(executable.resolve()), 0)
-            shortcut.QueryInterface(pythoncom.IID_IPersistFile).Save(str(staged.resolve()), 0)
-            if not shortcut_target(staged).samefile(executable):
-                raise OSError('바탕화면 바로가기 대상이 올바르지 않아 기존 버전을 유지합니다.')
-            atomic_bytes(active, record)
-            try:
-                atomic_bytes(paths.desktop / '군수실 일정 관리.lnk', staged.read_bytes())
-            except OSError:
-                if previous is not None:
-                    atomic_bytes(active, previous)
-                else:
-                    active.unlink(missing_ok=True)
-                raise
-        finally:
-            pythoncom.CoUninitialize()
-            try:
-                staged.unlink(missing_ok=True)
-            except OSError:
-                pass
-    else:
-        atomic_bytes(active, record)
+            plan = paths.updates / (token + '.json')
+            if plan.stat().st_size <= 8192:
+                origin = json.loads(plan.read_text('utf-8')).get('previous')
+        except (OSError, ValueError, TypeError):
+            pass
+    shortcut = desktop_entries.choose_shortcut(paths, old_record.get('shortcutName'), origin)
+    record = dict(version=VERSION, executable=str(executable), sha256=_digest(executable),
+                  launcherProtocol=PROTOCOL, shortcutName=shortcut.name)
+    if current and current[0] != VERSION:
+        record['previous'] = dict(version=current[0], executable=str(current[1]), sha256=_digest(current[1]))
+    elif old_record.get('previous'):
+        try:
+            previous_version, previous_target = validate_record(paths, old_record['previous'])
+            record['previous'] = dict(version=previous_version, executable=str(previous_target), sha256=_digest(previous_target))
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+    validate_record(paths, record)
+    if current:
+        backup = dict(old_record, version=current[0], executable=str(current[1]), sha256=_digest(current[1]))
+        atomic_bytes(active.with_suffix('.json.bak'), json.dumps(backup, ensure_ascii=False).encode('utf-8'))
+    if shortcut.exists() and shortcut_target(shortcut).samefile(launcher):
+        # Steady state: update only the small active pointer. Do not replace
+        # a user's renamed shortcut or a running launcher on every app update.
+        atomic_bytes(active, json.dumps(record, ensure_ascii=False).encode('utf-8'))
+        return
+    staged = paths.desktop / ('.GunsuSchedule-' + uuid.uuid4().hex + '.lnk')
+    try:
+        desktop_entries.write_shortcut(staged, launcher)
+        if not shortcut_target(staged).samefile(launcher):
+            raise OSError('바탕화면 바로가기 대상이 올바르지 않아 기존 버전을 유지합니다.')
+        atomic_bytes(active, json.dumps(record, ensure_ascii=False).encode('utf-8'))
+        try:
+            atomic_bytes(shortcut, staged.read_bytes())
+        except OSError:
+            if original is not None:
+                atomic_bytes(active, original)
+            else:
+                active.unlink(missing_ok=True)
+            raise
+    finally:
+        staged.unlink(missing_ok=True)
 
 
 def shortcut_target(path):
-    """Unicode 경로로 저장된 바로가기를 다시 읽어 실제 대상을 확인합니다."""
-    import pythoncom
-    from win32com.shell import shell
-    link = pythoncom.CoCreateInstance(shell.CLSID_ShellLink, None,
-        pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink)
-    link.QueryInterface(pythoncom.IID_IPersistFile).Load(str(Path(path).resolve()))
-    target, _ = link.GetPath(shell.SLGP_RAWPATH)
-    if not target:
-        raise OSError('바탕화면 바로가기 대상이 비어 있습니다.')
-    return Path(target)
+    return desktop_entries.read_shortcut(path)[0]
 
 
 def archive_legacy_desktop_entry(paths):
-    """Keep one Korean shortcut after a healthy launch; preserve the old EXE.
-
-    Only the literal Desktop/GunsuSchedule.exe whose bytes match a managed app
-    may be archived. A verified active install and working shortcut are required.
-    Run in a separate helper so the former updater can release its EXE lock.
-    """
-    previous = paths.desktop / ASSET_NAME
-    if not previous.is_file() or previous.is_symlink():
+    """After ready, migrate all positively identified desktop entries regardless of name."""
+    current = active_installation(paths)
+    if not current or current[0] != VERSION or current[1].resolve() != executable_for(paths).resolve():
         return False
-    source = executable_for(paths).resolve()
-    active = active_installation(paths)
-    if not active or active[0] != VERSION or active[1].resolve() != source:
-        return False
-    if os.name != 'nt':
-        return False
-    import pythoncom
-    pythoncom.CoInitialize()
-    try:
-        if not shortcut_target(paths.desktop / '군수실 일정 관리.lnk').samefile(source):
-            return False
-    finally:
-        pythoncom.CoUninitialize()
-    original = _digest(previous)
-    known = original == _digest(source)
-    candidates = [candidate for name in (ASSET_NAME, INSTALLED_EXE_NAME)
-                  for candidate in (paths.installation / 'versions').glob('*/' + name)]
-    for candidate in candidates:
-        try:
-            if _version(candidate.parent.name) <= _version(VERSION) and _digest(candidate) == original:
-                known = True
-                break
-        except (OSError, ValueError):
-            continue
-    if not known:
-        return False
-    backup = paths.updates / 'desktop-entries' / (original + '.exe')
-    if not backup.exists():
-        atomic_copy(previous, backup)
-    if _digest(backup) != original:
-        raise OSError('구버전 실행 파일의 원본 보관을 확인하지 못했습니다.')
-    for attempt in range(30):
-        # The old monitor briefly holds the old EXE open until it sees .ready.
-        if not previous.exists():
-            return True
-        if _digest(previous) != original:
-            return False
-        if _digest(backup) != original:
-            raise OSError('복구용 실행 파일이 변경되어 바탕화면 원본을 유지합니다.')
-        try:
-            previous.unlink()
-            return True
-        except PermissionError:
-            if attempt == 29:
-                logging.warning('Legacy desktop EXE remains locked; use the Korean shortcut')
-                return False
-            time.sleep(.5)
-    return False
+    verified_launcher(paths)
+    report = desktop_entries.migrate(paths, read_record(paths))
+    return bool(report['archived']) and not report['pending']
 
 
 class SingleInstance:

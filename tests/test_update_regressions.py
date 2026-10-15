@@ -13,6 +13,8 @@ from app_info import ASSET_NAME, VERSION
 from app_paths import AppPaths
 from schedule_domain import empty_snapshot
 from storage import SnapshotStore, encode
+from launcher_fixture import use_launcher_fixture
+from launch_registry import launcher_path
 
 
 FIXTURE = json.dumps({'test_event': '보은군민의날', 'timestamp': 20260920}, ensure_ascii=False).encode()
@@ -24,6 +26,7 @@ class UpdateRegressionTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.paths = AppPaths.isolated(self.directory.name)
         self.paths.ensure_data()
+        use_launcher_fixture(self, self.paths)
 
     def test_known_test_payload_is_archived_before_initialization(self):
         self.paths.database.write_bytes(FIXTURE)
@@ -125,11 +128,11 @@ class UpdateRegressionTests(unittest.TestCase):
         previous.write_bytes(old_managed.read_bytes())
         self.assertTrue(installation.archive_legacy_desktop_entry(self.paths))
         self.assertFalse(previous.exists())
-        self.assertEqual(list((self.paths.updates / 'desktop-entries').glob('*.exe'))[0].read_bytes(), old_managed.read_bytes())
+        self.assertEqual(list((self.paths.updates / 'desktop-entries').rglob('*.exe'))[0].read_bytes(), old_managed.read_bytes())
         import pythoncom
         pythoncom.CoInitialize()
         try:
-            self.assertTrue(installation.shortcut_target(self.paths.desktop / '군수실 일정 관리.lnk').samefile(source))
+            self.assertTrue(installation.shortcut_target(self.paths.desktop / '군수실 일정 관리.lnk').samefile(launcher_path(self.paths)))
         finally:
             pythoncom.CoUninitialize()
 
@@ -142,36 +145,36 @@ class UpdateRegressionTests(unittest.TestCase):
     def test_missing_shortcut_or_archive_failure_preserves_desktop_exe(self):
         previous, _, _ = self.prepare_desktop_archive()
         original = previous.read_bytes()
-        with patch('installation.shortcut_target', side_effect=FileNotFoundError('missing link')):
+        with patch('desktop_entries.read_shortcut', side_effect=FileNotFoundError('missing link')):
             with self.assertRaises(FileNotFoundError):
                 installation.archive_legacy_desktop_entry(self.paths)
         self.assertEqual(previous.read_bytes(), original)
-        with patch('installation.atomic_copy', side_effect=PermissionError('archive folder locked')):
-            with self.assertRaises(PermissionError):
-                installation.archive_legacy_desktop_entry(self.paths)
+        with patch('desktop_entries.atomic_copy', side_effect=PermissionError('archive folder locked')):
+            with self.assertLogs(level='WARNING'):
+                self.assertFalse(installation.archive_legacy_desktop_entry(self.paths))
         self.assertEqual(previous.read_bytes(), original)
 
     def test_locked_desktop_exe_retries_boundedly_and_keeps_recovery_copy(self):
         previous, _, _ = self.prepare_desktop_archive()
         original = previous.read_bytes()
         with patch.object(Path, 'unlink', side_effect=PermissionError('running old monitor')) as unlink, \
-             patch('installation.time.sleep') as sleep, self.assertLogs(level='WARNING'):
+             patch('desktop_entries.time.sleep') as sleep, self.assertLogs(level='WARNING'):
             self.assertFalse(installation.archive_legacy_desktop_entry(self.paths))
         self.assertEqual(unlink.call_count, 30)
         self.assertEqual(sleep.call_count, 29)
         self.assertEqual(previous.read_bytes(), original)
-        self.assertEqual(list((self.paths.updates / 'desktop-entries').glob('*.exe'))[0].read_bytes(), original)
+        self.assertEqual(list((self.paths.updates / 'desktop-entries').rglob('*.exe'))[0].read_bytes(), original)
         self.assertTrue(installation.archive_legacy_desktop_entry(self.paths))
 
     def test_changed_archive_during_retry_keeps_desktop_original(self):
         previous, _, _ = self.prepare_desktop_archive()
         original = previous.read_bytes()
         def change_backup(_):
-            list((self.paths.updates / 'desktop-entries').glob('*.exe'))[0].write_bytes(b'changed')
+            list((self.paths.updates / 'desktop-entries').rglob('*.exe'))[0].write_bytes(b'changed')
         with patch.object(Path, 'unlink', side_effect=PermissionError('locked')), \
-             patch('installation.time.sleep', side_effect=change_backup):
-            with self.assertRaises(OSError):
-                installation.archive_legacy_desktop_entry(self.paths)
+             patch('desktop_entries.time.sleep', side_effect=change_backup):
+            with self.assertLogs(level='WARNING'):
+                self.assertFalse(installation.archive_legacy_desktop_entry(self.paths))
         self.assertEqual(previous.read_bytes(), original)
 
     def test_optional_archive_helper_failure_never_opens_error_dialog_or_gui(self):

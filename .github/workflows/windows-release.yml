@@ -57,6 +57,18 @@ jobs:
             python -X utf8 tools/verify_in_app_update.py --previous-exe (Join-Path $legacy 'GunsuSchedule.exe') --current-exe '.\dist\군수실 일정 관리 설치.exe' --root (Join-Path $env:RUNNER_TEMP ('gunsu-update-' + $scenario)) --scenario $scenario
             if ($LASTEXITCODE -ne 0) { throw ('앱 내 업데이트 검사 실패: ' + $scenario) }
           }
+          $caseIndex = 0
+          foreach ($entry in @('GunsuSchedule.exe', '군수실 일정 관리.exe', '아버지 일정 (최종).exe')) {
+            foreach ($label in @('군수실 일정 관리.lnk', '아버지 일정.lnk')) {
+              $caseIndex++
+              python -X utf8 tools/verify_in_app_update.py --previous-exe (Join-Path $legacy 'GunsuSchedule.exe') --current-exe '.\dist\군수실 일정 관리 설치.exe' --root (Join-Path $env:RUNNER_TEMP ('gunsu-update-rename-' + $caseIndex)) --scenario valid --entry-name $entry --shortcut-name $label
+              if ($LASTEXITCODE -ne 0) { throw ('이름 변경 이전 검사 실패: ' + $caseIndex) }
+            }
+          }
+          foreach ($scenario in @('valid', 'corrupt')) {
+            python -X utf8 tools/verify_in_app_update.py --previous-exe (Join-Path $legacy 'GunsuSchedule.exe') --current-exe '.\dist\군수실 일정 관리 설치.exe' --root (Join-Path $env:RUNNER_TEMP ('gunsu-update-fixed-' + $scenario)) --scenario $scenario --monitor fixed
+            if ($LASTEXITCODE -ne 0) { throw ('고정 실행기 업데이트 검사 실패: ' + $scenario) }
+          }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -71,6 +83,8 @@ jobs:
             ${{ runner.temp }}/gunsu-update-*/update-ui-result.json
             ${{ runner.temp }}/gunsu-update-*/ui-smoke-result.json
             ${{ runner.temp }}/gunsu-update-*/data/application.log
+            ${{ runner.temp }}/gunsu-update-*/launcher-*.json
+            ${{ runner.temp }}/gunsu-update-*/installed/updates/desktop-migration.json
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
