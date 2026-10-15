@@ -86,16 +86,55 @@ def attach_ui(window, api, root, preserve=False):
             result.snapshot = info.snapshot;
             result.persistence = true;
           } else {
-            const event = window.ScheduleCore.newEvent('2026-10-02');
-            event.title = 'WebView2 연결 점검'; event.notes = '연결 테스트 메모';
-            const snapshot = info.snapshot; snapshot.events = [event];
-            const saved = await api.save_persistent_data(JSON.stringify(snapshot), snapshot.revision);
+            const element = id => document.getElementById(id);
+            const waitFor = async (check, description) => {
+              const deadline = Date.now() + 15000;
+              while (!check()) {
+                if (Date.now() > deadline) throw new Error('UI 점검 시간 초과: ' + description);
+                await new Promise(resolve => setTimeout(resolve, 30));
+              }
+            };
+            await waitFor(() => !element('newBtn').disabled, '입력 준비');
+            const form = element('eventForm');
+            const fill = (name, value) => { form.elements.namedItem(name).value = value; };
+            element('newBtn').click();
+            fill('date', '2026-10-02'); fill('time', '09:00');
+            fill('title', 'WebView2 연결 점검'); fill('notes', '연결 테스트 메모');
+            fill('place', '대회의실'); fill('dept', '행정과');
+            form.requestSubmit();
+            await waitFor(() => !element('eventDialog').open && !element('saveEventBtn').disabled, '첫 일정 저장');
+            // The quick-input path shares the same editor and advisory.
+            element('quickInput').value = '2026/10/02 09:00 <중복 일정 점검>';
+            element('quickBtn').click();
+            form.requestSubmit();
+            await waitFor(() => element('confirmDialog').open, '시작 시간 안내');
+            const message = element('confirmMessage').textContent;
+            const warned = message.includes('WebView2 연결 점검') && message.includes('대회의실') &&
+              message.includes('행정과') && message.includes('2026-10-02 09:00') &&
+              element('confirmYes').textContent === '이대로 저장';
+            element('confirmNo').click();
+            await waitFor(() => !element('saveEventBtn').disabled, '취소 후 다시 입력');
+            const afterCancel = await api.bootstrap();
+            const retained = element('eventDialog').open && form.elements.namedItem('title').value === '<중복 일정 점검>' &&
+              afterCancel.snapshot.events.length === 1;
+            form.requestSubmit();
+            await waitFor(() => element('confirmDialog').open, 'Esc 취소 확인');
+            element('confirmDialog').dispatchEvent(new Event('cancel', {cancelable:true}));
+            await waitFor(() => !element('saveEventBtn').disabled, 'Esc 취소 후 다시 입력');
+            const escapeRetained = !element('confirmDialog').open && element('eventDialog').open &&
+              form.elements.namedItem('title').value === '<중복 일정 점검>';
+            form.requestSubmit();
+            await waitFor(() => element('confirmDialog').open, '다시 저장 확인');
+            element('confirmYes').click();
+            await waitFor(() => !element('eventDialog').open, '중복 허용 저장');
             const loaded = await api.bootstrap();
-            result.persistence = saved.success && loaded.snapshot.events[0].notes === event.notes;
+            result.conflictAdvisory = warned && retained && escapeRetained && loaded.snapshot.events.length === 2 &&
+              loaded.snapshot.events.some(e => e.title === '<중복 일정 점검>' && e.time === '09:00');
+            result.persistence = result.conflictAdvisory && loaded.snapshot.events.some(e => e.notes === '연결 테스트 메모');
           }
           result.success = result.success && result.persistence;
           const planned = await api.preview_document({view:'daily',date:'2026-10-02'});
-          const expectedCount = PRESERVE_EXISTING ? info.snapshot.events.filter(e=>e.date==='2026-10-02' && e.status!=='cancelled').length : 1;
+          const expectedCount = PRESERVE_EXISTING ? info.snapshot.events.filter(e=>e.date==='2026-10-02' && e.status!=='cancelled').length : 2;
           result.documentPreview = planned.success && planned.plan.eventCount === expectedCount &&
             planned.plan.pages[0].rows[0].kind === 'daily-header' &&
             !!document.getElementById('includeAnnotation') &&
@@ -113,7 +152,7 @@ def attach_ui(window, api, root, preserve=False):
           const editing = await api.set_editing(false);
           result.success = result.success && editing.success && !!document.getElementById('newBtn');
           return result;
-        })()""".replace('ARTWORK_FILES', json.dumps(ASSET_FILES)).replace('PRESERVE_EXISTING', json.dumps(preserve))
+        })().catch(error => ({success:false,error:String(error)}))""".replace('ARTWORK_FILES', json.dumps(ASSET_FILES)).replace('PRESERVE_EXISTING', json.dumps(preserve))
         def done(result):
             result['executable'] = sys.executable
             if api._installed is not None:

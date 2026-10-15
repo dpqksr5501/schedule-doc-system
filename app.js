@@ -5,7 +5,7 @@
   let state = C.empty(), view = 'daily', selected = C.today(), api, information;
   let started = false, starting = false, readOnly = false, working = false, writing = false, writeQueue = Promise.resolve();
   let history = [], draft, originalDraft, listPage = 1, toastTimer, lastFocus;
-  let checkingUpdate = false;
+  let checkingUpdate = false, savingEvent = false;
   const names = {daily: '일일 일정표', weekly: '주간 행사계획', monthly: '월간 일정표', list: '전체 일정 · 검색'};
   const attendeeNames = {gunsu: '군수님 참석', v_gunsu: '부군수님 참석', general: '일반 / 부서 행사'};
   const statusNames = {confirmed: '확정', tentative: '미확정', cancelled: '취소'};
@@ -21,6 +21,7 @@
     const disabled = working || writing || readOnly || !started;
     $('updateNowBtn').disabled = disabled || !!draft;
     for (const id of ['newBtn', 'guideNewBtn', 'hintNewBtn', 'quickBtn', 'saveEventBtn', 'deleteBtn', 'copyBtn']) $(id).disabled = disabled;
+    $('saveEventBtn').disabled = disabled || savingEvent;
     $('undoBtn').disabled = disabled || !history.length;
     for (const id of ['hwpxBtn', 'hwpBtn', 'printBtn']) $(id).disabled = disabled || view === 'list';
     for (const id of ['selectedDate', 'gunsuOnly', 'includeNotes', 'includeAnnotation', 'weekendPair', 'prevBtn', 'nextBtn', 'todayBtn']) $(id).disabled = working || writing;
@@ -184,16 +185,22 @@
     if (api.set_editing) await api.set_editing(false);
   }
   async function saveEvent() {
+    if (!draft || savingEvent || working || writing || readOnly) return;
+    savingEvent = true; updateControls();
     try {
       const event = C.validateEvent(readDraft());
       if (event.checklist.some(c => !c.text)) throw new Error('확인 목록의 내용을 입력하거나 빈 항목을 제거해 주세요.');
-      const conflicts = C.conflicts(state.events, event);
-      if (conflicts.length && !await confirmAction('시간이 겹치는 일정이 있습니다', conflicts.map(e => `${e.time} ${e.title}`).join('\n') + '\n\n확인 후 이 일정도 저장할까요?', '확인 후 저장')) return;
+      const conflicts = C.sameStartConflicts(state.events, event);
+      if (conflicts.length) {
+        const details = conflicts.map(e => `• ${e.title}${e.status === 'tentative' ? ' [미확정]' : ''}\n  장소: ${e.place || '미정'} · 주관부서: ${e.dept || '미정'}`).join('\n\n');
+        if (!await confirmAction('군수님 참석 일정의 시작 시간이 같습니다', `${event.date} ${event.time}에 시작하는 다른 군수님 참석 일정이 ${conflicts.length}건 있습니다.\n\n${details}\n\n확인 후 이 일정도 저장할 수 있습니다. 취소하면 입력 내용으로 돌아갑니다.`, '이대로 저장')) return;
+      }
       event.updatedAt = new Date().toISOString();
       await commit(next => { const index = next.events.findIndex(e => e.id === event.id); if (index >= 0) next.events[index] = event; else next.events.push(event); });
       selected = event.date; $('eventDialog').close(); draft = null; render(); toast('일정을 저장했습니다. 한글 문서는 [한글 저장 (.hwp)]으로 새로 만드세요.');
       if (api.set_editing) await api.set_editing(false);
     } catch (error) { $('eventError').textContent = error.message; $('eventError').hidden = false; $('eventError').scrollIntoView({block: 'nearest'}); errorMessage(error); }
+    finally { savingEvent = false; updateControls(); }
   }
   async function deleteEvent() {
     if (!await confirmAction('일정을 휴지통으로 옮길까요?', draft.title + '\n삭제 후에도 휴지통에서 복원할 수 있습니다.', '휴지통으로 이동')) return;
@@ -327,7 +334,7 @@
     const examples = [ ['09:00','주요 업무 보고','군청 소회의실','gunsu'], ['11:00','주민 소통 간담회','군청 대회의실','gunsu'], ['14:00','지역 현안 점검','현장 방문','v_gunsu'] ];
     if (new URLSearchParams(location.search).get('empty') !== '1') snapshot.events = examples.map(([time,title,place,attendee], i) => ({...C.newEvent(), time, title, place, attendee, dept: '행정운영과', status: i === 2 ? 'tentative' : 'confirmed', annotation: i === 1 ? '주민 대표 3명 참석 · 군수님 인사말 3분' : '', participants: i === 1 ? '주민 대표, 관련 부서장' : '', preparation: i === 1 ? '군수님 인사말 3분, 현안 자료 준비' : '', checklist: i === 1 ? [{id:C.id(), text:'자료 10부 준비', done:false}] : []}));
     const unavailable = async () => ({success:false,message:'화면 미리보기입니다. 파일 저장은 데스크톱 프로그램에서 이용해 주세요.'});
-    return {bootstrap: async () => ({success:true,snapshot,version:'2.2.1',outputPath:'바탕화면 / 군수실_일정_출력문서',dataPath:'실제 데이터에 접근하지 않는 미리보기',appPath:'미리보기'}), ready:async()=>({success:true}),
+    return {bootstrap: async () => ({success:true,snapshot,version:'2.2.2',outputPath:'바탕화면 / 군수실_일정_출력문서',dataPath:'실제 데이터에 접근하지 않는 미리보기',appPath:'미리보기'}), ready:async()=>({success:true}),
       preview_document:async(request)=>{const response=await fetch('/preview-document',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({snapshot,request})});if(!response.ok) throw new Error('개발용 preview_server.py로 화면을 열어 주세요.');return response.json();}, save_persistent_data:async(content, expected)=>{if(expected!==snapshot.revision) return {success:false,message:'저장 순서 불일치'}; snapshot=JSON.parse(content);snapshot.revision++;snapshot.savedAt=new Date().toISOString();return {success:true,snapshot:structuredClone(snapshot)};}, list_backups:async()=>({success:true,items:[]}), export_document:unavailable, backup_data:unavailable, preview_restore:unavailable,restore_data:unavailable,open_export_folder:unavailable,open_last_output:unavailable,open_manual:unavailable,export_csv:unavailable,check_update:unavailable};
   }
   async function start() {

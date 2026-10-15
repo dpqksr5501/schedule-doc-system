@@ -66,11 +66,12 @@
     }).filter(Boolean);
     return {added, skipped};
   }
-  function conflicts(events, event) {
-    const minutes = value => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
-    const start = minutes(event.time), end = event.endTime ? minutes(event.endTime) : start + 1;
-    return events.filter(e => e.id !== event.id && e.date === event.date && e.status !== 'cancelled' && e.attendee === event.attendee &&
-      minutes(e.time) < end && start < (e.endTime ? minutes(e.endTime) : minutes(e.time) + 1));
+  function sameStartConflicts(events, event) {
+    // An advisory for the mayor's start times, never an assumed duration or a save rule.
+    if (event.attendee !== 'gunsu' || event.status === 'cancelled' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(event.time)) return [];
+    return events.filter(e => e.id !== event.id && e.date === event.date && e.time === event.time &&
+      e.status !== 'cancelled' && e.attendee === 'gunsu')
+      .sort((a, b) => a.title.localeCompare(b.title, 'ko') || a.id.localeCompare(b.id));
   }
   function noteText(event) {
     const lines = [];
@@ -84,5 +85,5 @@
     while (cursor <= final) { const week = []; for (let i = 0; i < 7; i++) { week.push(cursor); cursor = addDays(cursor, 1); } weeks.push(week); } return weeks;
   }
   function escape(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
-  return {today, dateObject, dateString, addDays, monday, label, range, empty, id, newEvent, validateEvent, filterEvents, quickInput, copyWeek, conflicts, noteText, titleText, calendar, escape};
+  return {today, dateObject, dateString, addDays, monday, label, range, empty, id, newEvent, validateEvent, filterEvents, quickInput, copyWeek, sameStartConflicts, noteText, titleText, calendar, escape};
 });
