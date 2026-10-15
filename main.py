@@ -86,14 +86,14 @@ class DesktopApi:
                     failure.unlink(missing_ok=True)
                 except OSError:
                     logging.warning('Previous update notice could not be removed')
-                if self._installed is not None and not getattr(self, '_test_mode', False) and not getattr(self, '_entry_refresh_started', False):
-                    self._entry_refresh_started = True
-                    try:
-                        import subprocess
-                        subprocess.Popen([str(self._installed), '--refresh-desktop-entry', self._update_token],
-                            env=independent_environment(), creationflags=subprocess.CREATE_NO_WINDOW)
-                    except (OSError, TypeError):
-                        logging.warning('Legacy desktop entry refresh could not start', exc_info=True)
+            if self._installed is not None and not getattr(self, '_test_mode', False) and not getattr(self, '_entry_cleanup_started', False):
+                self._entry_cleanup_started = True
+                try:
+                    import subprocess
+                    subprocess.Popen([str(self._installed), '--archive-desktop-entry'],
+                        env=independent_environment(), creationflags=subprocess.CREATE_NO_WINDOW)
+                except OSError:
+                    logging.warning('Legacy desktop entry archive could not start', exc_info=True)
             return {'success': True, 'automaticUpdate': bool(getattr(sys, 'frozen', False)
                     and not self._update_token and not getattr(self, '_test_mode', False)
                     and not (self._paths.updates / 'last_failure.txt').exists())}
@@ -357,8 +357,12 @@ def main():
     if len(sys.argv) == 3 and sys.argv[1] == '--monitor-update':
         updater.monitor_update(paths, sys.argv[2])
         return
-    if len(sys.argv) == 3 and sys.argv[1] == '--refresh-desktop-entry':
-        installation.refresh_legacy_desktop_entry(paths, sys.argv[2])
+    if len(sys.argv) == 2 and sys.argv[1] == '--archive-desktop-entry':
+        try:
+            installation.archive_legacy_desktop_entry(paths)
+        except Exception:
+            # Optional housekeeping must not interrupt a working application.
+            logging.warning('Legacy desktop EXE could not be archived; leave it in place', exc_info=True)
         return
     token = sys.argv[3] if update_smoke else sys.argv[2] if len(sys.argv) == 3 and sys.argv[1] == '--update-token' else None
     if token is not None and not re.fullmatch(r'[0-9a-f]{32}', token):

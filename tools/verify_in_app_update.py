@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT))
 from PyInstaller.archive.readers import CArchiveReader
 from app_info import VERSION, ASSET_NAME
 from app_paths import AppPaths
-from installation import active_installation, refresh_legacy_desktop_entry, shortcut_target
+from installation import active_installation, archive_legacy_desktop_entry, shortcut_target
 from native_workers import independent_environment
 from storage import atomic_bytes, atomic_copy
 
@@ -78,6 +78,7 @@ def run(previous, current, root, scenario):
         assert not (root / 'ui-smoke-result.json').exists(), 'Unusable new GUI must not open'
         assert (paths.installation / 'active.json').read_bytes() == old_record
         assert paths.database.read_bytes() == original_data
+        assert desktop_entry.exists(), 'Failed update must preserve the old desktop entry'
         assert not (paths.updates / (token + '.ready')).exists()
     else:
         assert status == 0 and not rollbacks, 'Legacy monitor incorrectly rolled back the update'
@@ -92,12 +93,19 @@ def run(previous, current, root, scenario):
         try:
             active = active_installation(paths)
             assert shortcut_target(paths.desktop / '군수실 일정 관리.lnk').samefile(active[1])
-            assert refresh_legacy_desktop_entry(paths, token), 'Old Desktop EXE was not refreshed'
         finally:
             pythoncom.CoUninitialize()
-        # Reopen the very same old desktop entry; it must now relay to the active version.
+        assert archive_legacy_desktop_entry(paths), 'Duplicate Desktop EXE was not archived'
+        assert not desktop_entry.exists(), 'Only the Korean shortcut should remain'
+        assert any(digest(p) == digest(previous) for p in (paths.updates / 'desktop-entries').glob('*.exe'))
+        pythoncom.CoInitialize()
+        try:
+            reopen = shortcut_target(paths.desktop / '군수실 일정 관리.lnk')
+        finally:
+            pythoncom.CoUninitialize()
+        # Reopen the remaining Korean shortcut's verified target.
         (root / 'ui-smoke-result.json').rename(root / 'update-ui-result.json')
-        subprocess.run([str(desktop_entry), '--upgrade-smoke-test', str(root)], check=True, timeout=90,
+        subprocess.run([str(reopen), '--upgrade-smoke-test', str(root)], check=True, timeout=90,
                        env=independent_environment(), creationflags=flags)
         deadline = time.monotonic() + 90
         while not (root / 'ui-smoke-result.json').exists():

@@ -139,54 +139,58 @@ def shortcut_target(path):
     return Path(target)
 
 
-def refresh_legacy_desktop_entry(paths, token):
-    """Refresh only an exact old app EXE left on Desktop, after successful update.
+def archive_legacy_desktop_entry(paths):
+    """Keep one Korean shortcut after a healthy launch; preserve the old EXE.
 
-    Old releases cannot redirect themselves to active.json. Preserve their bytes
-    and verify against a managed old version before replacing this entry point.
-    Arbitrary installer locations and unrelated desktop EXEs are never touched.
+    Only the literal Desktop/GunsuSchedule.exe whose bytes match a managed app
+    may be archived. A verified active install and working shortcut are required.
+    Run in a separate helper so the former updater can release its EXE lock.
     """
-    if not re.fullmatch(r'[0-9a-f]{32}', token):
-        raise ValueError('잘못된 업데이트 작업 번호')
-    if not (paths.updates / (token + '.ready')).exists():
+    previous = paths.desktop / ASSET_NAME
+    if not previous.is_file() or previous.is_symlink():
         return False
-    plan = json.loads((paths.updates / (token + '.json')).read_text('utf-8'))
-    previous = Path(plan['previous']).resolve()
     source = executable_for(paths).resolve()
     active = active_installation(paths)
-    if previous != (paths.desktop / ASSET_NAME).resolve() or not previous.is_file():
-        return False
     if not active or active[0] != VERSION or active[1].resolve() != source:
         return False
-    if plan['version'] != VERSION or 'sha256:' + _digest(source) != plan['digest'].lower():
+    if os.name != 'nt':
         return False
+    import pythoncom
+    pythoncom.CoInitialize()
+    try:
+        if not shortcut_target(paths.desktop / '군수실 일정 관리.lnk').samefile(source):
+            return False
+    finally:
+        pythoncom.CoUninitialize()
     original = _digest(previous)
-    if original == _digest(source):
-        return True
-    known = False
+    known = original == _digest(source)
     candidates = [candidate for name in (ASSET_NAME, INSTALLED_EXE_NAME)
                   for candidate in (paths.installation / 'versions').glob('*/' + name)]
     for candidate in candidates:
         try:
-            if _version(candidate.parent.name) < _version(VERSION) and _digest(candidate) == original:
+            if _version(candidate.parent.name) <= _version(VERSION) and _digest(candidate) == original:
                 known = True
                 break
         except (OSError, ValueError):
             continue
     if not known:
         return False
-    backup = paths.updates / 'entry-backups' / (original + '.exe')
+    backup = paths.updates / 'desktop-entries' / (original + '.exe')
     if not backup.exists():
         atomic_copy(previous, backup)
     if _digest(backup) != original:
         raise OSError('구버전 실행 파일의 원본 보관을 확인하지 못했습니다.')
     for attempt in range(30):
         # The old monitor briefly holds the old EXE open until it sees .ready.
+        if not previous.exists():
+            return True
         if _digest(previous) != original:
             return False
+        if _digest(backup) != original:
+            raise OSError('복구용 실행 파일이 변경되어 바탕화면 원본을 유지합니다.')
         try:
-            atomic_copy(source, previous)
-            return _digest(previous) == _digest(source)
+            previous.unlink()
+            return True
         except PermissionError:
             if attempt == 29:
                 logging.warning('Legacy desktop EXE remains locked; use the Korean shortcut')
