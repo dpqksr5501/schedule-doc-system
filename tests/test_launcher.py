@@ -40,7 +40,7 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(launch_choices(self.paths)[0][0], '99.7.3')
         with patch('launcher_main.subprocess.Popen', return_value=Mock()) as popen:
             self.assertEqual(launcher_main.run(self.paths), 0)
-        self.assertEqual(Path(popen.call_args.args[0][0]), Path(record['executable']))
+        self.assertTrue(Path(popen.call_args.args[0][0]).samefile(record['executable']))
 
     def test_corrupt_active_file_falls_back_to_verified_previous(self):
         old = self.executable('2.1.3', b'MZ-known-old')
@@ -155,9 +155,12 @@ class LauncherTests(unittest.TestCase):
         atomic_bytes(self.paths.installation / 'active.json', json.dumps(old).encode())
         self.activate_current()
         record = json.loads((self.paths.installation / 'active.json').read_text('utf-8'))
-        self.assertEqual(record['previous'], old)
+        self.assertEqual(record['previous']['version'], old['version'])
+        self.assertEqual(record['previous']['sha256'], old['sha256'])
+        self.assertTrue(Path(record['previous']['executable']).samefile(old['executable']))
         installation.activate(self.paths)
-        self.assertEqual(json.loads((self.paths.installation / 'active.json').read_text('utf-8'))['previous'], old)
+        updated = json.loads((self.paths.installation / 'active.json').read_text('utf-8'))['previous']
+        self.assertEqual(updated, record['previous'])
 
     def test_update_handoff_uses_fixed_launcher_and_canonical_previous_path(self):
         self.activate_current()
