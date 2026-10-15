@@ -86,8 +86,28 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          # GitHub strips Korean upload filenames; retain them inside the ZIP.
+          published_zip="artifacts/release/GunsuSchedule-${RELEASE_TAG}-Windows.zip"
+          cp "artifacts/release/군수실 일정 관리-${RELEASE_TAG}-Windows.zip" "$published_zip"
+          python - "$published_zip" <<'PY'
+          from pathlib import Path
+          import hashlib, json, sys
+          archive = Path(sys.argv[1])
+          executable = Path('artifacts/dist/GunsuSchedule.exe')
+          manifest = Path('artifacts/release/release-manifest.json')
+          data = json.loads(manifest.read_text('utf-8'))
+          data['installer'] = data['asset']
+          data['asset'] = executable.name
+          data['localZip'] = data['zip']
+          data['zip'] = archive.name
+          data.pop('compatibilityAsset', None)
+          manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2), 'utf-8')
+          Path('artifacts/release/SHA256SUMS.txt').write_text(''.join(
+              hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + path.name + '\n'
+              for path in (executable, archive)), 'utf-8')
+          PY
           gh release create "$RELEASE_TAG" --repo "$REPOSITORY" --draft --verify-tag \
             --notes-file artifacts/release/RELEASE_NOTES.txt --title "군수실 일정 관리 $RELEASE_TAG" \
-            "artifacts/dist/군수실 일정 관리 설치.exe" artifacts/dist/GunsuSchedule.exe \
-            "artifacts/release/군수실 일정 관리-${RELEASE_TAG}-Windows.zip" \
+            "artifacts/dist/GunsuSchedule.exe#앱 내 업데이트용 (직접 실행보다 ZIP 권장)" \
+            "${published_zip}#군수실 일정 관리 ${RELEASE_TAG} (ZIP · 권장)" \
             artifacts/release/SHA256SUMS.txt artifacts/release/release-manifest.json

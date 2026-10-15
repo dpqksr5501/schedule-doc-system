@@ -3,7 +3,9 @@
 
 1. 사용자에게 안내할 파일
 
-  군수실 일정 관리-v2.1.4-Windows.zip
+  GitHub 표시: 군수실 일정 관리 v2.1.4 (ZIP · 권장)
+  다운로드명: GunsuSchedule-v2.1.4-Windows.zip
+  로컬 ZIP명: 군수실 일정 관리-v2.1.4-Windows.zip
     ├ 군수실 일정 관리 설치.exe
     ├ 처음사용_5분안내.html
     └ 사용설명서.txt
@@ -40,13 +42,16 @@ assets/branding의 JPG 4개와 branding.py는 실행에 필요한 소스 리소�
 
 4. 초안 첨부 파일
 
-  군수실 일정 관리 설치.exe                    사용자용 설치 파일
-  군수실 일정 관리-v2.1.4-Windows.zip           사용자용 묶음
+  GunsuSchedule-v2.1.4-Windows.zip              사용자용 묶음 (한글 표시명)
   GunsuSchedule.exe                            구버전 앱의 업데이트 호환용
-  SHA256SUMS.txt                               두 EXE의 SHA256
+  SHA256SUMS.txt                               공개 EXE와 ZIP의 SHA256
   release-manifest.json                        버전·파일명·크기·SHA256
 
-한글 EXE와 호환용 EXE의 내용·해시는 같습니다. 구버전 앱은 고정된 영어 asset 이름을
+GitHub는 업로드한 파일명에서 한글을 제거하므로 한글 EXE를 직접 올리면 default.exe로
+바뀝니다. 사용자에게는 한글 설치 EXE가 들어 있는 ZIP을 한글 표시명으로 안내합니다.
+로컬 ZIP과 공개 ZIP의 내용·해시는 같습니다. 공개 manifest와 SHA256SUMS는 실제
+공개 파일명에 맞춰 자동 준비합니다. 한글 설치 EXE는 별도 공개 asset으로 올리지 않습니다.
+한글 설치 EXE와 호환용 EXE의 내용·해시는 같습니다. 구버전 앱은 고정된 영어 asset 이름을
 찾으므로 호환용 파일도 첨부해야 합니다. 새 앱은 한글 asset을 우선하고 영어 asset도 지원합니다.
 ZIP에 영어 실행 파일을 중복으로 넣지 않습니다.
 릴리즈 설명은 docs/releases/v2.1.4.txt에서 읽습니다.
@@ -57,7 +62,7 @@ ZIP에 영어 실행 파일을 중복으로 넣지 않습니다.
 공개 릴리즈 API:
 https://api.github.com/repos/dpqksr5501/schedule-doc-system/releases/latest
 
-새 태그, 두 EXE의 이름·size·sha256 digest, 한글 ZIP을 확인합니다.
+새 태그, EXE와 ZIP의 이름·표시명·size·sha256 digest, ZIP 안의 한글 설치 파일을 확인합니다.
 SHA256이나 출처가 다르면 실행하지 않습니다. ZIP만 게시하면 앱 내 업데이트는 되지 않습니다.
 v2.1.4에서 v2.1.4는 같은 버전이며 다음 정식 버전(v2.1.5 등)으로 운영 갱신을 확인해야 합니다.
 가짜 버전이나 이전 EXE를 새 버전으로 올리지 마세요.

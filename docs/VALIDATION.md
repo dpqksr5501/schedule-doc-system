@@ -138,3 +138,7 @@ HWP가 기본 강조 버튼이며 문서 전체의 가로 넘침이 없는 것�
 - 결과: `build/실제업그레이드-2.1.3-to-2.1.4/upgrade-result.json` (`success: true`). 최종 로컬 EXE의 SHA256은 `99ce5e9f35b0c7cdc18ca377717ad902bb079a4da88d841de0d18453cb9e99a6`입니다.
 
 기존 v1의 임시 브라우저 저장소 전환은 이 시험과 별개입니다. v1은 전체 일정 JSON 백업을 먼저 저장한 뒤 필요하면 가져와야 합니다. 위 결과는 실제 업무 자료를 사용한 현장 테스트나 한글 프린터 검증을 의미하지 않습니다.
+
+GitHub 태그 빌드 [38721723125](https://github.com/dpqksr5501/schedule-doc-system/actions/runs/38721723125)가 성공했습니다. 해당 빌드의 실제 배포 EXE로 같은 보존 검증을 반복해 9개 파일의 SHA256 일치와 바로가기 전환을 확인했습니다. 결과는 `build/GitHub배포검증-2.1.3-to-2.1.4/upgrade-result.json`, EXE SHA256은 `4b669ee97f04e9cf96a7a717d9848f742de11d4d03b0e70626ad35301dac3d99`입니다. GitHub에 보관된 v2.1.2 EXE에서 로컬 v2.1.4로의 보존 검증도 통과했습니다.
+
+공개 전 초안 검토에서 GitHub가 한글 파일명을 `default.exe`와 `-v2.1.4-Windows.zip`으로 바꾼 것을 확인했습니다. 한글 표시명을 붙인 `GunsuSchedule-v2.1.4-Windows.zip`으로 게시하고, ZIP 내부의 `군수실 일정 관리 설치.exe`는 그대로 유지합니다. 혼동되는 `default.exe`는 초안에서 제외했습니다. 앱 업데이트용 `GunsuSchedule.exe`는 유지하며, 공개 SHA256SUMS와 manifest를 실제 공개 파일명에 맞췄습니다. ZIP 내용은 검증된 GitHub artifact와 바이트 단위로 같습니다. 이후 태그에서도 이 처리가 자동 적용되도록 배포 workflow만 보완했으며, v2.1.4 소스 태그와 실행 파일은 변경하지 않았습니다.
