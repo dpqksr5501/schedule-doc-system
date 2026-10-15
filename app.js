@@ -5,6 +5,7 @@
   let state = C.empty(), view = 'daily', selected = C.today(), api, information;
   let started = false, starting = false, readOnly = false, working = false, writing = false, writeQueue = Promise.resolve();
   let history = [], draft, originalDraft, listPage = 1, toastTimer, lastFocus;
+  let checkingUpdate = false;
   const names = {daily: '일일 일정표', weekly: '주간 행사계획', monthly: '월간 일정표', list: '전체 일정 · 검색'};
   const attendeeNames = {gunsu: '군수님 참석', v_gunsu: '부군수님 참석', general: '일반 / 부서 행사'};
   const statusNames = {confirmed: '확정', tentative: '미확정', cancelled: '취소'};
@@ -18,6 +19,7 @@
   function setWorking(value) { working = value; updateControls(); }
   function updateControls() {
     const disabled = working || writing || readOnly || !started;
+    $('updateNowBtn').disabled = disabled || !!draft;
     for (const id of ['newBtn', 'guideNewBtn', 'hintNewBtn', 'quickBtn', 'saveEventBtn', 'deleteBtn', 'copyBtn']) $(id).disabled = disabled;
     $('undoBtn').disabled = disabled || !history.length;
     for (const id of ['hwpxBtn', 'hwpBtn', 'printBtn']) $(id).disabled = disabled || view === 'list';
@@ -217,7 +219,7 @@
   }
   async function showTools() {
     const result = check(await api.list_backups());
-    utility('백업 · 복원 · 프로그램 관리', `<section class="utility-section"><h3>내 일정 백업</h3><p>일정, 휴지통, 업무 메모를 하나의 백업 파일로 보관합니다.</p><div class="utility-actions"><button class="button primary" data-action="backup">지금 백업하기</button><button class="button secondary" data-action="restore-file">백업 파일 선택</button></div></section><section class="utility-section"><h3>자동 백업에서 복원</h3><p>최근 저장 이전의 상태를 60개까지 보관합니다. 선택하면 복원할 내용부터 확인합니다.</p>${result.items.length ? result.items.map(item => `<div class="backup-row"><div><strong>${h(item.savedAt ? new Date(item.savedAt).toLocaleString('ko-KR') : '이전 데이터')}</strong><small>일정 ${item.count}건 · 저장 순서 ${item.revision}</small></div><button class="button secondary" data-backup="${h(item.id)}">내용 확인</button></div>`).join('') : '<p>첫 일정 저장 후 자동 백업이 쌓입니다.</p>'}</section><section class="utility-section"><h3>화면 글자 크기</h3><div class="utility-actions"><button class="button secondary" data-font="normal">기본 크기</button><button class="button secondary" data-font="large">크게 보기</button></div></section><section class="utility-section"><h3>프로그램 업데이트</h3><p>현재 v${h(information.version)} · 확인 후 직접 선택할 때만 새 버전을 적용합니다.</p><button class="button secondary" data-action="update">새 버전 확인</button><div id="updateResult"></div></section>`);
+    utility('백업 · 복원 · 프로그램 관리', `<section class="utility-section"><h3>내 일정 백업</h3><p>일정, 휴지통, 업무 메모를 하나의 백업 파일로 보관합니다.</p><div class="utility-actions"><button class="button primary" data-action="backup">지금 백업하기</button><button class="button secondary" data-action="restore-file">백업 파일 선택</button></div></section><section class="utility-section"><h3>자동 백업에서 복원</h3><p>최근 저장 이전의 상태를 60개까지 보관합니다. 선택하면 복원할 내용부터 확인합니다.</p>${result.items.length ? result.items.map(item => `<div class="backup-row"><div><strong>${h(item.savedAt ? new Date(item.savedAt).toLocaleString('ko-KR') : '이전 데이터')}</strong><small>일정 ${item.count}건 · 저장 순서 ${item.revision}</small></div><button class="button secondary" data-backup="${h(item.id)}">내용 확인</button></div>`).join('') : '<p>첫 일정 저장 후 자동 백업이 쌓입니다.</p>'}</section><section class="utility-section"><h3>화면 글자 크기</h3><div class="utility-actions"><button class="button secondary" data-font="normal">기본 크기</button><button class="button secondary" data-font="large">크게 보기</button></div></section><section class="utility-section"><h3>프로그램 업데이트</h3><p>현재 v${h(information.version)} · 실행 시 새 버전을 자동 확인·적용합니다. 입력 중에는 재시작을 미루며, 업데이트 실패 후에는 아래 버튼으로 다시 시도합니다.</p><button class="button secondary" data-action="update">새 버전 확인</button><div id="updateResult"></div></section>`);
   }
   function showHelp() {
     utility('사용 방법 · 파일 저장 위치', `<div class="help-branding"><img class="help-symbol" src="assets/branding/boeun-symbol.jpg" alt="보은군 심벌마크"><img class="help-vision" src="assets/branding/vision-stacked.jpg" alt="군민이 행복한 도시형 농촌 보은"></div><section class="utility-section"><h3>처음에는 세 가지만 기억하세요.</h3><p>① 새 일정을 입력하고 저장합니다.<br>② 일일·주간·월간 양식을 고릅니다.<br>③ 한글 저장 (.hwp) 또는 인쇄를 누릅니다.</p><p>화면의 일정을 누르면 참석 예정자, 준비사항, 업무 메모와 확인 목록을 함께 수정할 수 있습니다.</p></section><section class="utility-section"><h3>바탕화면 출력 폴더</h3><p>기본 한글 저장은 실제 HWP 파일을 만듭니다. 한글의 접근 승인창이 나타나면 경로를 확인하고 허용해 주세요. 한글 파일은 양식별 폴더에, 백업 파일은 데이터백업 폴더에 보관합니다.</p><div class="path-box">${h(information.outputPath)}</div><button class="button primary" data-action="folder">저장 폴더 열기</button></section><section class="utility-section"><h3>프로그램과 일정 데이터</h3><p>배포 실행 파일을 처음 열면 바탕화면 실행 바로가기가 준비됩니다. 프로그램 파일과 일정은 서로 다른 곳에 보관되므로 업데이트 후에도 일정을 유지합니다.</p><div class="path-box">프로그램: ${h(information.appPath)}<br>일정 데이터: ${h(information.dataPath)}</div></section><section class="utility-section"><h3>업무 메모와 출력</h3><p>메모는 기본 한글 문서와 인쇄물에서 빠집니다. 일정표에는 ‘출력 주석 포함’으로 짧은 안내만 넣을 수 있습니다. 자세한 참석자·준비사항·메모는 ‘상세 업무자료 첨부’를 선택하면 뒤쪽 참고자료에 붙습니다. 전체 데이터 백업에는 메모도 포함됩니다.</p><button class="button secondary" data-action="manual">자세한 사용설명서 열기</button></section>`);
@@ -260,22 +262,34 @@
       window.print();
     } finally { setWorking(false); }
   }
-  async function checkUpdate() {
-    const target = $('updateResult'); target.textContent = '새 버전을 확인하는 중…';
-    const result = await api.check_update();
-    if (!result.success) { target.textContent = result.message; return; }
-    if (!result.hasUpdate) { target.textContent = '현재 정식 버전을 사용하고 있습니다.'; return; }
-    target.textContent = `새 버전 v${result.latestVersion}\n${result.releaseNotes || ''}${result.canApply ? '' : '\n' + result.message}`;
-    if (result.canApply && await confirmAction('새 버전을 적용할까요?', `v${information.version} → v${result.latestVersion}\n일정은 그대로 유지하고 프로그램을 다시 시작합니다. 기존 버전도 복구용으로 보관합니다.`, '다운로드 후 재시작')) {
-      await writeQueue; setWorking(true); target.textContent = '파일을 다운로드하고 확인하는 중입니다. 이 창을 잠시 유지해 주세요.';
-      try { check(await api.apply_update()); toast('새 버전을 시작합니다.'); } catch (error) { setWorking(false); throw error; }
-    }
+  async function checkUpdate(automatic = false) {
+    if (checkingUpdate || working || writing || readOnly) return;
+    checkingUpdate = true;
+    const target = $('updateResult') || $('updateStatus'); target.textContent = '새 버전을 확인하는 중…';
+    try {
+      const result = await api.check_update();
+      if (!result.success) { target.textContent = result.message; return; }
+      if (!result.hasUpdate) { target.textContent = '현재 정식 버전을 사용하고 있습니다.'; $('updateBanner').hidden = true; return; }
+      target.textContent = `새 버전 v${result.latestVersion}\n${result.releaseNotes || ''}${result.canApply ? '' : '\n' + result.message}`;
+      if (!result.canApply) return;
+      $('updateStatus').textContent = `새 버전 v${result.latestVersion}이 있습니다. 일정과 문서는 유지됩니다.`;
+      $('updateBanner').hidden = false;
+      // A network response must never interrupt an edit or an open dialog.
+      if (working || writing || draft || (automatic && document.querySelector('dialog[open]'))) return;
+      if (!automatic && !await confirmAction('새 버전을 적용할까요?', `v${information.version} → v${result.latestVersion}\n일정은 그대로 유지하고 프로그램을 다시 시작합니다. 기존 버전도 복구용으로 보관합니다.`, '다운로드 후 재시작')) return;
+      if (working || writing || draft || readOnly) return;
+      setWorking(true); await writeQueue;
+      target.textContent = $('updateStatus').textContent = '새 버전을 다운로드하고 확인하는 중입니다. 완료하면 자동으로 다시 시작합니다.';
+      try { check(await api.apply_update()); toast('새 버전을 시작합니다.'); }
+      catch (error) { setWorking(false); $('updateStatus').textContent = '업데이트를 완료하지 못했습니다. 현재 버전은 계속 사용할 수 있습니다. ' + error.message; if (!automatic) throw error; }
+    } finally { checkingUpdate = false; }
   }
   function movePeriod(direction) { const d = C.dateObject(selected); if (view === 'monthly') { d.setDate(1); d.setMonth(d.getMonth() + direction); selected = C.dateString(d); } else selected = C.addDays(selected, direction * (view === 'weekly' ? 7 : 1)); render(); }
   function bind() {
     $('viewNav').addEventListener('click', event => { const button = event.target.closest('[data-view]'); if (button) { view = button.dataset.view; listPage = 1; render(); } });
     const click = (id, action) => $(id).addEventListener('click', () => run(action));
     click('newBtn', () => openEvent()); click('undoBtn', undo); click('todayBtn', () => { selected = C.today(); render(); }); click('prevBtn', () => movePeriod(-1)); click('nextBtn', () => movePeriod(1));
+    click('updateNowBtn', () => checkUpdate());
     click('guideNewBtn', () => openEvent()); click('hintNewBtn', () => openEvent()); click('guideHelpBtn', showHelp);
     click('hintFindBtn', () => { if (working || writing) return; view = 'list'; listPage = 1; $('searchInput').value = ''; $('listStatus').value = 'all'; render(); $('searchInput').focus(); });
     click('quickBtn', () => { const event = C.quickInput($('quickInput').value, selected); openEvent(event); });
@@ -313,7 +327,7 @@
     const examples = [ ['09:00','주요 업무 보고','군청 소회의실','gunsu'], ['11:00','주민 소통 간담회','군청 대회의실','gunsu'], ['14:00','지역 현안 점검','현장 방문','v_gunsu'] ];
     if (new URLSearchParams(location.search).get('empty') !== '1') snapshot.events = examples.map(([time,title,place,attendee], i) => ({...C.newEvent(), time, title, place, attendee, dept: '행정운영과', status: i === 2 ? 'tentative' : 'confirmed', annotation: i === 1 ? '주민 대표 3명 참석 · 군수님 인사말 3분' : '', participants: i === 1 ? '주민 대표, 관련 부서장' : '', preparation: i === 1 ? '군수님 인사말 3분, 현안 자료 준비' : '', checklist: i === 1 ? [{id:C.id(), text:'자료 10부 준비', done:false}] : []}));
     const unavailable = async () => ({success:false,message:'화면 미리보기입니다. 파일 저장은 데스크톱 프로그램에서 이용해 주세요.'});
-    return {bootstrap: async () => ({success:true,snapshot,version:'2.1.4',outputPath:'바탕화면 / 군수실_일정_출력문서',dataPath:'실제 데이터에 접근하지 않는 미리보기',appPath:'미리보기'}), ready:async()=>({success:true}),
+    return {bootstrap: async () => ({success:true,snapshot,version:'2.1.5',outputPath:'바탕화면 / 군수실_일정_출력문서',dataPath:'실제 데이터에 접근하지 않는 미리보기',appPath:'미리보기'}), ready:async()=>({success:true}),
       preview_document:async(request)=>{const response=await fetch('/preview-document',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({snapshot,request})});if(!response.ok) throw new Error('개발용 preview_server.py로 화면을 열어 주세요.');return response.json();}, save_persistent_data:async(content, expected)=>{if(expected!==snapshot.revision) return {success:false,message:'저장 순서 불일치'}; snapshot=JSON.parse(content);snapshot.revision++;snapshot.savedAt=new Date().toISOString();return {success:true,snapshot:structuredClone(snapshot)};}, list_backups:async()=>({success:true,items:[]}), export_document:unavailable, backup_data:unavailable, preview_restore:unavailable,restore_data:unavailable,open_export_folder:unavailable,open_last_output:unavailable,open_manual:unavailable,export_csv:unavailable,check_update:unavailable};
   }
   async function start() {
@@ -328,7 +342,7 @@
     const messages = [];
     if (preview) messages.push('화면 미리보기입니다. 입력 내용은 이 화면에만 잠시 보관되며, 실제 일정이나 파일은 변경하지 않습니다.');
     if (readOnly) messages.push(information.recoveryError);
-    if (information.recovery) messages.push(`자동 백업으로 복구했습니다. 복구 시각: ${information.recovery.savedAt || '이전 데이터'}. 최근 일정과 메모를 확인해 주세요.`);
+    if (information.recovery) messages.push(information.recovery.kind === 'legacySelfTest' ? information.recovery.message : `자동 백업으로 복구했습니다. 복구 시각: ${information.recovery.savedAt || '이전 데이터'}. 최근 일정과 메모를 확인해 주세요.`);
     if (information.outputError) messages.push(information.outputError);
     if (information.updateWarning) messages.push(information.updateWarning);
     notice(messages.join('\n')); render();
@@ -342,6 +356,7 @@
         }
       } catch (error) { notice('이전 화면의 일정을 가져오지 못했습니다. 이전 프로그램에서 데이터 백업을 저장한 뒤 백업·복원 메뉴를 이용해 주세요. ' + error.message); }
     }
+    if (!preview && !readOnly && ready.success && ready.automaticUpdate) run(() => checkUpdate(true));
   }
   window.addEventListener('pywebviewready', () => run(start), {once:true});
   window.addEventListener('DOMContentLoaded', () => { if (preview || window.pywebview?.api) run(start); else setTimeout(() => { if (!started) notice('데스크톱 프로그램 연결을 기다리고 있습니다. 실행 파일(군수실 일정 관리 설치.exe)로 열어 주세요. 브라우저에서 HTML 파일만 열면 실제 일정이 저장되지 않습니다.'); }, 5000); });

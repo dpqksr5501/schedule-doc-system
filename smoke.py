@@ -125,7 +125,9 @@ def attach_ui(window, api, root, preserve=False):
                     shortcut = installation.shortcut_target(api._paths.desktop / '군수실 일정 관리.lnk')
                     result['installedLaunch'] = bool(active and active[1].samefile(sys.executable)
                                                     and shortcut.samefile(sys.executable))
-                    result['success'] = result['success'] and result['installedLaunch']
+                    result['activationVerified'] = bool(active and shortcut.samefile(active[1])
+                        and active[0] == VERSION and active[1].read_bytes() == Path(sys.executable).read_bytes())
+                    result['success'] = result['success'] and result['activationVerified']
                 finally:
                     pythoncom.CoUninitialize()
             atomic_bytes(Path(root) / 'ui-smoke-result.json', json.dumps(result, ensure_ascii=False).encode('utf-8'))

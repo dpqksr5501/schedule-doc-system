@@ -1,6 +1,7 @@
 """Atomic, validated snapshot storage with revision checks and recovery history."""
 from copy import deepcopy
 from pathlib import Path
+import hashlib
 import json
 import os
 import re
@@ -10,6 +11,20 @@ import threading
 import time
 import uuid
 from schedule_domain import MAX_BYTES, UnsupportedSchemaError, empty_snapshot, parse_snapshot, timestamp, validate_snapshot
+
+
+class LegacySelfTestFile(ValueError):
+    """Exact non-schedule payload written by the original v1.0.1 test runner."""
+
+
+def is_legacy_self_test(content):
+    try:
+        value = json.loads(content)
+        return (isinstance(value, dict) and set(value) == {'test_event', 'timestamp'}
+                and value['test_event'] == '보은군민의날'
+                and type(value['timestamp']) is int and value['timestamp'] == 20260920)
+    except (ValueError, TypeError):
+        return False
 
 
 def atomic_replace(source, target):
@@ -72,7 +87,10 @@ class SnapshotStore:
             content = stream.read(MAX_BYTES + 1)
         if len(content) > MAX_BYTES:
             raise ValueError("저장 파일이 허용 크기를 초과했습니다.")
-        return parse_snapshot(content.decode("utf-8-sig"))
+        decoded = content.decode('utf-8-sig')
+        if len(content) <= 256 and is_legacy_self_test(decoded):
+            raise LegacySelfTestFile('구버전 개발 검사가 남긴 시험 파일입니다.')
+        return parse_snapshot(decoded)
 
     def load(self):
         with self._lock:
@@ -85,10 +103,13 @@ class SnapshotStore:
             if not existing:
                 self._snapshot = empty_snapshot()
                 return deepcopy(self._snapshot)
-            failures = []
+            failures, fixtures = [], []
             for path in existing:
                 try:
                     snapshot = self._read(path)
+                except LegacySelfTestFile:
+                    fixtures.append(path)
+                    continue
                 except UnsupportedSchemaError:
                     if path == primary:
                         raise
@@ -105,6 +126,24 @@ class SnapshotStore:
                     self.recovery = {"file": path.name, "savedAt": snapshot["savedAt"]}
                 self._snapshot = snapshot
                 return deepcopy(snapshot)
+            if fixtures and len(fixtures) == len(existing):
+                # Only this exact historical self-test payload is known to hold
+                # no schedules. Unknown/corrupt/future data remains read-only.
+                preserved = []
+                for path in fixtures:
+                    original = path.read_bytes()
+                    target = self.paths.backups / ('legacy-self-test-' + hashlib.sha256(original).hexdigest() + '.json')
+                    if not target.exists():
+                        atomic_copy(path, target)
+                    if target.read_bytes() != original:
+                        raise OSError('구버전 시험 파일의 원본 보관을 확인하지 못했습니다.')
+                    preserved.append(target.name)
+                clean = empty_snapshot()
+                atomic_bytes(primary, encode(clean))
+                self._snapshot = clean
+                self.recovery = {'kind': 'legacySelfTest', 'file': preserved[0], 'savedAt': '',
+                                 'message': '구버전 개발 검사가 남긴 시험 파일을 별도로 보관했습니다. 일정 입력을 시작할 수 있습니다. 이전 일정 백업이 있다면 백업·복원에서 가져오세요.'}
+                return deepcopy(clean)
             raise ValueError("일정 파일과 자동 백업을 읽지 못했습니다. 원본을 보존했습니다. 백업 복원을 이용해 주세요.")
 
     def save(self, raw, expected_revision):

@@ -10,3 +10,4 @@ if __name__ == '__main__':
         raise SystemExit(1)
     subprocess.run(['node', '--check', str(root / 'app.js')], check=True)
     subprocess.run(['node', str(root / 'tests' / 'core.test.cjs')], check=True)
+    subprocess.run(['node', str(root / 'tests' / 'update.test.cjs')], check=True)

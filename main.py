@@ -69,7 +69,7 @@ class DesktopApi:
             from schedule_domain import empty_snapshot
             result.update(snapshot=empty_snapshot(), readOnly=True, recoveryError=str(error))
         failure = self._paths.updates / 'last_failure.txt'
-        if failure.exists():
+        if failure.exists() and not self._update_token:
             result['updateWarning'] = failure.read_text(encoding='utf-8')
         return result
 
@@ -86,7 +86,17 @@ class DesktopApi:
                     failure.unlink(missing_ok=True)
                 except OSError:
                     logging.warning('Previous update notice could not be removed')
-            return {'success': True}
+                if self._installed is not None and not getattr(self, '_test_mode', False) and not getattr(self, '_entry_refresh_started', False):
+                    self._entry_refresh_started = True
+                    try:
+                        import subprocess
+                        subprocess.Popen([str(self._installed), '--refresh-desktop-entry', self._update_token],
+                            env=independent_environment(), creationflags=subprocess.CREATE_NO_WINDOW)
+                    except (OSError, TypeError):
+                        logging.warning('Legacy desktop entry refresh could not start', exc_info=True)
+            return {'success': True, 'automaticUpdate': bool(getattr(sys, 'frozen', False)
+                    and not self._update_token and not getattr(self, '_test_mode', False)
+                    and not (self._paths.updates / 'last_failure.txt').exists())}
         except Exception as error:
             return self._failure(error)
 
@@ -250,8 +260,12 @@ class DesktopApi:
 
     def apply_update(self):
         with self._lock:
-            if self._busy:
+            if self._busy or self._editing:
                 return {'success': False, 'message': '현재 작업이 끝난 뒤 업데이트해 주세요.'}
+            try:
+                self._store.load()
+            except (OSError, ValueError):
+                return {'success': False, 'message': '일정 데이터를 먼저 복원한 뒤 업데이트해 주세요. 원본과 백업은 유지됩니다.'}
             self._busy = True
         result = updater.prepare_update(self._paths)
         if result['success'] and self._window is not None:
@@ -332,9 +346,10 @@ def main():
         ok, message = convert_hwpx_to_hwp(sys.argv[2], sys.argv[3])
         atomic_bytes(sys.argv[4], json.dumps({'success': ok, 'message': message}).encode('utf-8'))
         return
-    preserve_smoke = len(sys.argv) == 3 and sys.argv[1] == '--upgrade-smoke-test'
+    update_smoke = len(sys.argv) == 4 and sys.argv[1] == '--update-smoke-test'
+    preserve_smoke = update_smoke or len(sys.argv) == 3 and sys.argv[1] == '--upgrade-smoke-test'
     install_smoke = len(sys.argv) == 3 and sys.argv[1] in ('--install-smoke-test', '--upgrade-smoke-test')
-    ui_smoke = Path(sys.argv[2]) if len(sys.argv) == 3 and sys.argv[1] in ('--ui-smoke-test', '--install-smoke-test', '--upgrade-smoke-test') else None
+    ui_smoke = Path(sys.argv[2]) if update_smoke or len(sys.argv) == 3 and sys.argv[1] in ('--ui-smoke-test', '--install-smoke-test', '--upgrade-smoke-test') else None
     paths = AppPaths.isolated(ui_smoke) if ui_smoke else AppPaths.current()
     paths.ensure_data()
     handler = RotatingFileHandler(paths.data / 'application.log', maxBytes=1024 * 1024, backupCount=3, encoding='utf-8')
@@ -342,7 +357,10 @@ def main():
     if len(sys.argv) == 3 and sys.argv[1] == '--monitor-update':
         updater.monitor_update(paths, sys.argv[2])
         return
-    token = sys.argv[2] if len(sys.argv) == 3 and sys.argv[1] == '--update-token' else None
+    if len(sys.argv) == 3 and sys.argv[1] == '--refresh-desktop-entry':
+        installation.refresh_legacy_desktop_entry(paths, sys.argv[2])
+        return
+    token = sys.argv[3] if update_smoke else sys.argv[2] if len(sys.argv) == 3 and sys.argv[1] == '--update-token' else None
     if token is not None and not re.fullmatch(r'[0-9a-f]{32}', token):
         raise ValueError('잘못된 업데이트 작업 정보')
     instance = installation.SingleInstance()
@@ -359,8 +377,8 @@ def main():
         time.sleep(0.5)
     try:
         try:
-            installed = installation.prepare_installation(paths) if not ui_smoke or install_smoke else None
-            if installed is not None and Path(sys.executable).resolve() != installed.resolve():
+            installed = installation.prepare_installation(paths) if not ui_smoke or install_smoke or update_smoke else None
+            if installed is not None and Path(sys.executable).resolve() != installed.resolve() and not token:
                 instance.close()
                 _launch_installed(installed, token, ui_smoke if install_smoke else None, preserve_smoke)
                 return
@@ -376,6 +394,16 @@ def main():
         api = DesktopApi(paths)
         api._installed = installed
         api._update_token = token
+        api._test_mode = bool(ui_smoke)
+        if token and api.bootstrap()['readOnly']:
+            # Fail before opening a second GUI. The old updater restores the
+            # existing app; it must not compete with an unusable new window.
+            atomic_bytes(paths.updates / (token + '.failed'), b'data-unreadable')
+            logging.error('Update startup refused: existing data requires recovery')
+            return
+        if token and installed is not None and installed.resolve() != installation.executable_for(paths).resolve():
+            atomic_bytes(paths.updates / (token + '.failed'), b'newer-version-already-installed')
+            return
         # Edge's native message bridge works with file URLs. Avoid a local HTTP
         # listener, which can be blocked by institution firewalls.
         api._window = webview.create_window(f'{APP_NAME} · v{VERSION}', url=(resource_dir() / 'index.html').as_uri(),

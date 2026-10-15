@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import sys
+import time
 import uuid
 from app_info import ASSET_NAME, INSTALLED_EXE_NAME, VERSION
 from storage import atomic_bytes, atomic_copy, atomic_replace
@@ -136,6 +137,62 @@ def shortcut_target(path):
     if not target:
         raise OSError('바탕화면 바로가기 대상이 비어 있습니다.')
     return Path(target)
+
+
+def refresh_legacy_desktop_entry(paths, token):
+    """Refresh only an exact old app EXE left on Desktop, after successful update.
+
+    Old releases cannot redirect themselves to active.json. Preserve their bytes
+    and verify against a managed old version before replacing this entry point.
+    Arbitrary installer locations and unrelated desktop EXEs are never touched.
+    """
+    if not re.fullmatch(r'[0-9a-f]{32}', token):
+        raise ValueError('잘못된 업데이트 작업 번호')
+    if not (paths.updates / (token + '.ready')).exists():
+        return False
+    plan = json.loads((paths.updates / (token + '.json')).read_text('utf-8'))
+    previous = Path(plan['previous']).resolve()
+    source = executable_for(paths).resolve()
+    active = active_installation(paths)
+    if previous != (paths.desktop / ASSET_NAME).resolve() or not previous.is_file():
+        return False
+    if not active or active[0] != VERSION or active[1].resolve() != source:
+        return False
+    if plan['version'] != VERSION or 'sha256:' + _digest(source) != plan['digest'].lower():
+        return False
+    original = _digest(previous)
+    if original == _digest(source):
+        return True
+    known = False
+    candidates = [candidate for name in (ASSET_NAME, INSTALLED_EXE_NAME)
+                  for candidate in (paths.installation / 'versions').glob('*/' + name)]
+    for candidate in candidates:
+        try:
+            if _version(candidate.parent.name) < _version(VERSION) and _digest(candidate) == original:
+                known = True
+                break
+        except (OSError, ValueError):
+            continue
+    if not known:
+        return False
+    backup = paths.updates / 'entry-backups' / (original + '.exe')
+    if not backup.exists():
+        atomic_copy(previous, backup)
+    if _digest(backup) != original:
+        raise OSError('구버전 실행 파일의 원본 보관을 확인하지 못했습니다.')
+    for attempt in range(30):
+        # The old monitor briefly holds the old EXE open until it sees .ready.
+        if _digest(previous) != original:
+            return False
+        try:
+            atomic_copy(source, previous)
+            return _digest(previous) == _digest(source)
+        except PermissionError:
+            if attempt == 29:
+                logging.warning('Legacy desktop EXE remains locked; use the Korean shortcut')
+                return False
+            time.sleep(.5)
+    return False
 
 
 class SingleInstance:

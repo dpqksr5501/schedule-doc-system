@@ -1,5 +1,5 @@
 """Release identity shared by packaging, UI and the update service."""
-VERSION = "2.1.4"
+VERSION = "2.1.5"
 APP_NAME = "군수실 일정 관리"
 # Keep this download name for updaters already installed in v2.1.3 and earlier.
 ASSET_NAME = "GunsuSchedule.exe"

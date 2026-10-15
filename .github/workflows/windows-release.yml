@@ -47,6 +47,16 @@ jobs:
           }
           $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
           if (-not $report.success -or -not $report.installedLaunch) { throw '설치·바로가기 전환 점검 실패' }
+      - name: 구버전 앱 내 업데이트 감시·데이터 보존·재실행 회귀 검사
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $legacy = Join-Path $env:RUNNER_TEMP 'gunsu-legacy'
+          gh release download v2.1.4 --repo '${{ github.repository }}' --pattern GunsuSchedule.exe --dir $legacy
+          foreach ($scenario in @('valid', 'fixture', 'corrupt')) {
+            python -X utf8 tools/verify_in_app_update.py --previous-exe (Join-Path $legacy 'GunsuSchedule.exe') --current-exe '.\dist\군수실 일정 관리 설치.exe' --root (Join-Path $env:RUNNER_TEMP ('gunsu-update-' + $scenario)) --scenario $scenario
+            if ($LASTEXITCODE -ne 0) { throw ('앱 내 업데이트 검사 실패: ' + $scenario) }
+          }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -57,6 +67,10 @@ jobs:
             ${{ runner.temp }}/gunsu-ui-probe/data/application.log
             ${{ runner.temp }}/gunsu-install-probe/ui-smoke-result.json
             ${{ runner.temp }}/gunsu-install-probe/data/application.log
+            ${{ runner.temp }}/gunsu-update-*/in-app-update-result.json
+            ${{ runner.temp }}/gunsu-update-*/update-ui-result.json
+            ${{ runner.temp }}/gunsu-update-*/ui-smoke-result.json
+            ${{ runner.temp }}/gunsu-update-*/data/application.log
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:

@@ -189,6 +189,9 @@ def monitor_update(paths, token):
     for _ in range(90):
         if ready.exists():
             return 0  # New app activates the desktop shortcut only after successful bootstrap.
+        failed = paths.updates / (token + '.failed')
+        if failed.exists() and failed.read_text('utf-8') == 'data-unreadable':
+            return rollback('일정 데이터를 읽지 못해 기존 버전을 다시 실행했습니다. 백업·복원에서 먼저 일정을 복원해 주세요.')
         if process.poll() is not None:
             return rollback('새 버전이 시작되지 않아 기존 버전을 다시 실행했습니다.')
         time.sleep(1)
